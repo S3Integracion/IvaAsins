@@ -128,12 +128,14 @@ def main():
     parser.add_argument('--reporte', required=True, help='Reporte Amazon .txt')
     parser.add_argument('--salida', required=True, help='CSV de salida')
     parser.add_argument('--resumen', required=False, help='Archivo resumen (properties)')
+    parser.add_argument('--rechazados', required=False, help='CSV de ASIN rechazados')
     args = parser.parse_args()
 
     base_path = os.path.abspath(args.base)
     reporte_path = os.path.abspath(args.reporte)
     salida_path = os.path.abspath(args.salida)
     resumen_path = os.path.abspath(args.resumen) if args.resumen else salida_path + '.resumen'
+    rechazados_path = os.path.abspath(args.rechazados) if args.rechazados else salida_path + '.rechazados.csv'
 
     if not os.path.isfile(base_path):
         raise FileNotFoundError('No existe el CSV base: ' + base_path)
@@ -143,19 +145,29 @@ def main():
     base_asins, header_fields, header_map, base_delim, trailing_delim = _load_base_asins(base_path)
 
     output_rows = OrderedDict()
-    duplicates = []
+    duplicates = set()
+    cancelled_asins = set()
     skipped_cancelled = 0
     skipped_base = 0
     processed = 0
+    total_rows = 0
+    matched_base = 0
+    duplicate_rows = 0
+    no_asin_rows = 0
 
     for row in _load_reporte_rows(reporte_path):
+        total_rows += 1
         status = row['order-status']
         if _is_cancelled(status):
             skipped_cancelled += 1
+            asin_cancel = row['asin'].strip().upper()
+            if asin_cancel:
+                cancelled_asins.add(asin_cancel)
             continue
 
         asin = row['asin']
         if not asin:
+            no_asin_rows += 1
             continue
         asin_norm = asin.upper()
 
@@ -165,15 +177,18 @@ def main():
         if asin_norm in output_rows:
             existing = output_rows[asin_norm]
             if existing['IVA'] != iva_value:
-                duplicates.append(asin)
+                duplicates.add(asin_norm)
                 if iva_value == 'SI':
                     output_rows[asin_norm] = {'ASIN': asin, 'SKU': sku_value, 'IVA': iva_value}
             else:
-                duplicates.append(asin)
+                duplicates.add(asin_norm)
+            duplicate_rows += 1
             continue
 
         output_rows[asin_norm] = {'ASIN': asin, 'SKU': sku_value, 'IVA': iva_value}
         processed += 1
+        if asin_norm in base_asins:
+            matched_base += 1
 
     os.makedirs(os.path.dirname(salida_path), exist_ok=True)
     with open(salida_path, 'w', encoding='utf-8', newline='') as f:
@@ -192,13 +207,35 @@ def main():
                 line += base_delim
             f.write(line + '\r\n')
 
+    rejected = OrderedDict()
+    for asin_key in sorted(cancelled_asins):
+        rejected[asin_key] = 'CANCELADO'
+    for asin_key in sorted(duplicates):
+        rejected[asin_key] = 'DUPLICADO'
+    if no_asin_rows > 0:
+        rejected[''] = f"SIN_ASIN (filas={no_asin_rows})"
+
+    if rejected:
+        os.makedirs(os.path.dirname(rechazados_path), exist_ok=True)
+        with open(rechazados_path, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['ASIN', 'MOTIVO', 'SKU', 'IVA'])
+            for asin_key, motivo in rejected.items():
+                writer.writerow([asin_key, motivo, '', ''])
+
     resumen_data = {
         'ok': 'true',
         'procesados': str(processed),
         'saltados_cancelados': str(skipped_cancelled),
         'saltados_base': str(skipped_base),
-        'duplicados': str(len(set(duplicates))),
-        'duplicados_asin': ','.join(sorted(set(duplicates)))
+        'duplicados': str(len(duplicates)),
+        'duplicados_asin': ','.join(sorted(duplicates)),
+        'total_reporte': str(total_rows),
+        'match_bd': str(matched_base),
+        'rechazados_total': str(len(rejected)),
+        'duplicados_filas': str(duplicate_rows),
+        'sin_asin_filas': str(no_asin_rows),
+        'rechazados_archivo': rechazados_path if rejected else ''
     }
     _write_properties(resumen_path, resumen_data)
 

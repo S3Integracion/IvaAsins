@@ -63,11 +63,13 @@ public class Principal extends JFrame {
     private JButton btnPreview;
     private JButton btnExport;
     private JButton btnClear;
+    private JButton btnExportRechazados;
     private JButton btnBuscarBase;
     private JButton btnBuscarReporte;
 
     private File tempOutput;
     private File tempResumen;
+    private File tempRechazados;
     private File lastBase;
     private File lastReporte;
     private final MotorIvaRunner runner = new MotorIvaRunner();
@@ -170,6 +172,7 @@ public class Principal extends JFrame {
         btnPreview.addActionListener(e -> onPreview());
         btnExport.addActionListener(e -> onExport());
         btnClear.addActionListener(e -> onClear());
+        btnExportRechazados.addActionListener(e -> onExportRechazados());
 
         installFileDrop(rootPanel);
         installFileDrop(panelTop);
@@ -177,6 +180,8 @@ public class Principal extends JFrame {
         installFileDrop(tablePreview);
         installFileDrop(txtBase);
         installFileDrop(txtReporte);
+
+        updateRechazadosButtonEnabled(false);
     }
 
     private void onSelectBase() {
@@ -246,8 +251,10 @@ public class Principal extends JFrame {
         lblStatus.setText("Listo. Arrastra archivos .csv y .txt o usa Buscar.");
         tempOutput = null;
         tempResumen = null;
+        tempRechazados = null;
         lastBase = null;
         lastReporte = null;
+        updateRechazadosButtonEnabled(false);
     }
 
     private void runMotor(File base, File reporte, boolean showPreview, File exportDestino) {
@@ -263,7 +270,8 @@ public class Principal extends JFrame {
                 }
                 tempOutput = new File(tempDir, "Asins_Taxes.csv");
                 tempResumen = new File(tempDir, "Asins_Taxes.resumen");
-                return runner.ejecutar(base, reporte, tempOutput, tempResumen);
+                tempRechazados = new File(tempDir, "Asins_Taxes.rechazados.csv");
+                return runner.ejecutar(base, reporte, tempOutput, tempResumen, tempRechazados);
             }
 
             @Override
@@ -281,6 +289,7 @@ public class Principal extends JFrame {
                     if (showPreview) {
                         loadPreview(tempOutput, 100);
                         lblStatus.setText("Listo. Filas generadas: " + resultado.procesados);
+                        showSummaryPopup(resultado);
                     }
                     if (exportDestino != null) {
                         if (exportTempTo(exportDestino)) {
@@ -289,19 +298,30 @@ public class Principal extends JFrame {
                             return;
                         }
                     }
-                    if (resultado.duplicados > 0) {
-                        showDuplicatesPopup(resultado);
-                    }
+                    // El resumen ya incluye duplicados y cancelados.
                     if (!showPreview && exportDestino == null) {
                         lblStatus.setText("Listo. Filas generadas: " + resultado.procesados);
                     }
+                    updateRechazadosButtonEnabled(resultado.rechazadosTotal > 0);
                 } catch (Exception ex) {
                     showError(ex.getMessage());
                     lblStatus.setText("Error en el proceso.");
+                    updateRechazadosButtonEnabled(false);
                 }
             }
         };
         worker.execute();
+    }
+
+    private void onExportRechazados() {
+        if (tempRechazados == null || !tempRechazados.exists()) {
+            showError("No hay archivo de no procesados disponible. Ejecuta una previsualización primero.");
+            return;
+        }
+        File destino = chooseSaveFile("Guardar Asins_Rechazados.csv", "Asins_Rechazados.csv", "csv");
+        if (destino != null) {
+            exportRechazadosTo(destino, tempRechazados);
+        }
     }
 
     private boolean exportTempTo(File destino) {
@@ -312,6 +332,35 @@ public class Principal extends JFrame {
         } catch (IOException ex) {
             showError("No se pudo exportar el archivo: " + ex.getMessage());
             return false;
+        }
+    }
+
+    private boolean exportRechazadosTo(File destino, File origen) {
+        if (origen == null || !origen.exists()) {
+            showError("No se encontró el archivo de rechazados.");
+            return false;
+        }
+        if (destino.exists()) {
+            int option = JOptionPane.showConfirmDialog(this,
+                    "El archivo ya existe. ¿Deseas reemplazarlo?", "Confirmar",
+                    JOptionPane.YES_NO_OPTION);
+            if (option != JOptionPane.YES_OPTION) {
+                return false;
+            }
+        }
+        try {
+            Files.copy(origen.toPath(), destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            JOptionPane.showMessageDialog(this, "Archivo de rechazados exportado correctamente.");
+            return true;
+        } catch (IOException ex) {
+            showError("No se pudo exportar el archivo de rechazados: " + ex.getMessage());
+            return false;
+        }
+    }
+
+    private void updateRechazadosButtonEnabled(boolean enabled) {
+        if (btnExportRechazados != null) {
+            btnExportRechazados.setEnabled(enabled && tempRechazados != null && tempRechazados.exists());
         }
     }
 
@@ -443,6 +492,9 @@ public class Principal extends JFrame {
         btnPreview.setEnabled(enabled);
         btnExport.setEnabled(enabled);
         btnClear.setEnabled(enabled);
+        if (btnExportRechazados != null) {
+            btnExportRechazados.setEnabled(enabled && tempRechazados != null && tempRechazados.exists());
+        }
     }
 
     private void showError(String message) {
@@ -470,6 +522,35 @@ public class Principal extends JFrame {
             }
         }
         JOptionPane.showMessageDialog(this, msg.toString(), "Duplicados", JOptionPane.WARNING_MESSAGE);
+    }
+
+    private void showSummaryPopup(MotorIvaRunner.Resultado resultado) {
+        int total = resultado.totalReporte;
+        int cancelados = resultado.saltadosCancelados;
+        int sinAsin = resultado.sinAsinFilas;
+        int duplicadasFilas = resultado.duplicadosFilas;
+        int exportado = resultado.procesados;
+
+        StringBuilder lines = new StringBuilder();
+        lines.append("RESUMEN DE REPORTE\n\n");
+        lines.append(String.format("%-28s %8d%n", "Total filas en reporte", total));
+        lines.append(String.format("%-28s %8d%n", "(-) Cancelados (filas)", cancelados));
+        lines.append(String.format("%-28s %8d%n", "(-) Sin ASIN (filas)", sinAsin));
+        lines.append(String.format("%-28s %8d%n", "(-) Filas duplicadas", duplicadasFilas));
+        lines.append(String.format("%-28s %8s%n", "----------------------------", ""));
+        lines.append(String.format("%-28s %8d%n", "(=) Total exportado", exportado));
+        lines.append("\n");
+        lines.append(String.format("%-28s %8d%n", "ASIN duplicados (únicos)", resultado.duplicados));
+        lines.append(String.format("%-28s %8d%n", "Match con BD (ASIN)", resultado.matchBd));
+        if (resultado.rechazadosTotal > 0) {
+            lines.append(String.format("%-28s %8d%n", "CSV no procesados", resultado.rechazadosTotal));
+        }
+        lines.append("\n");
+        lines.append("Nota: duplicados se cuentan por ASIN único; se conserva 1 (IVA=SI).");
+        lines.append("\nPara exportar no procesados usa el botón correspondiente.");
+
+        String html = "<html><pre>" + lines.toString() + "</pre></html>";
+        JOptionPane.showMessageDialog(this, html, "Resumen", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void installFileDrop(Component component) {
@@ -640,6 +721,10 @@ public class Principal extends JFrame {
         btnClear = new JButton();
         btnClear.setText("Limpiar");
         panelButtons.add(btnClear);
+
+        btnExportRechazados = new JButton();
+        btnExportRechazados.setText("Exportar no procesados");
+        panelButtons.add(btnExportRechazados);
 
         scrollPane = new JScrollPane();
         rootPanel.add(scrollPane, BorderLayout.CENTER);

@@ -24,12 +24,18 @@ public class MotorIvaRunner {
         public int procesados;
         public int saltadosBase;
         public int saltadosCancelados;
+        public int totalReporte;
+        public int matchBd;
+        public int rechazadosTotal;
+        public int duplicadosFilas;
+        public int sinAsinFilas;
+        public File rechazados;
         public File salida;
         public File resumen;
         public String stdout;
     }
 
-    public Resultado ejecutar(File baseCsv, File reporteTxt, File salidaCsv, File resumenFile)
+    public Resultado ejecutar(File baseCsv, File reporteTxt, File salidaCsv, File resumenFile, File rechazadosFile)
             throws IOException, InterruptedException {
         Path motoresDir = findMotoresDir();
         if (motoresDir == null) {
@@ -60,6 +66,10 @@ public class MotorIvaRunner {
         cmd.add(salidaCsv.getAbsolutePath());
         cmd.add("--resumen");
         cmd.add(resumenFile.getAbsolutePath());
+        if (rechazadosFile != null) {
+            cmd.add("--rechazados");
+            cmd.add(rechazadosFile.getAbsolutePath());
+        }
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
@@ -79,6 +89,7 @@ public class MotorIvaRunner {
         resultado.stdout = output.toString().trim();
         resultado.salida = salidaCsv;
         resultado.resumen = resumenFile;
+        resultado.rechazados = rechazadosFile;
 
         if (exitCode != 0) {
             resultado.ok = false;
@@ -103,6 +114,15 @@ public class MotorIvaRunner {
         resultado.procesados = parseInt(props.getProperty("procesados", "0"));
         resultado.saltadosBase = parseInt(props.getProperty("saltados_base", "0"));
         resultado.saltadosCancelados = parseInt(props.getProperty("saltados_cancelados", "0"));
+        resultado.totalReporte = parseInt(props.getProperty("total_reporte", "0"));
+        resultado.matchBd = parseInt(props.getProperty("match_bd", "0"));
+        resultado.rechazadosTotal = parseInt(props.getProperty("rechazados_total", "0"));
+        resultado.duplicadosFilas = parseInt(props.getProperty("duplicados_filas", "0"));
+        resultado.sinAsinFilas = parseInt(props.getProperty("sin_asin_filas", "0"));
+        String rechazadosPath = props.getProperty("rechazados_archivo", "").trim();
+        if (!rechazadosPath.isEmpty()) {
+            resultado.rechazados = new File(rechazadosPath);
+        }
         resultado.mensaje = "OK";
         return resultado;
     }
