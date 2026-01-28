@@ -101,6 +101,12 @@
                   <text value="Limpiar"/>
                 </properties>
               </component>
+              <component id="btnExportRechazados" class="javax.swing.JButton" binding="btnExportRechazados">
+                <constraints/>
+                <properties>
+                  <text value="Exportar no procesados"/>
+                </properties>
+              </component>
             </children>
           </grid>
         </children>
