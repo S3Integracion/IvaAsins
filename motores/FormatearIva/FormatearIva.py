@@ -158,9 +158,6 @@ def main():
         if not asin:
             continue
         asin_norm = asin.upper()
-        if asin_norm in base_asins:
-            skipped_base += 1
-            continue
 
         iva_value = 'SI' if _has_tax(row['item-tax']) else 'NO'
         sku_value = row['sku']
