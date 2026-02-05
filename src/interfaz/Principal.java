@@ -4,11 +4,12 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.EventQueue;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
-import java.awt.Font;
 import java.awt.Insets;
+import java.awt.Cursor;
+import java.awt.Image;
+import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
@@ -16,10 +17,12 @@ import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -35,11 +38,11 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
-import javax.swing.UIManager;
 import javax.swing.table.DefaultTableModel;
 
 import com.intellij.uiDesigner.core.GridConstraints;
@@ -61,55 +64,19 @@ public class Principal extends JFrame {
     private JTable tablePreview;
     private JLabel lblStatus;
     private JButton btnPreview;
-    private JButton btnExport;
     private JButton btnClear;
-    private JButton btnExportRechazados;
     private JButton btnBuscarBase;
     private JButton btnBuscarReporte;
+    private JButton btnHelp;
+    private JMenuBar menuBar;
+    private JMenu mnFile;
+    private JMenuItem mntmManual;
+    private JMenuItem mntmSalir;
+    private JMenu mnTitle;
 
-    private File tempOutput;
+    private File tempPreview;
     private File tempResumen;
-    private File tempRechazados;
-    private File lastBase;
-    private File lastReporte;
     private final MotorIvaRunner runner = new MotorIvaRunner();
-
-    /**
-     * Launch the application.
-     */
-    public static void main(String[] args) {
-        applyModernStyle();
-        EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                try {
-                    Principal window = new Principal();
-                    window.setVisible(true);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-    }
-
-    private static void applyModernStyle() {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ex) {
-            // ignore
-        }
-        Font base = new Font("Segoe UI", Font.PLAIN, 13);
-        UIManager.put("Button.font", base);
-        UIManager.put("Label.font", base);
-        UIManager.put("TextField.font", base);
-        UIManager.put("Table.font", base);
-        UIManager.put("TableHeader.font", base.deriveFont(Font.BOLD));
-        UIManager.put("Menu.font", base);
-        UIManager.put("MenuItem.font", base);
-        UIManager.put("ScrollPane.font", base);
-        UIManager.put("OptionPane.font", base);
-        UIManager.put("OptionPane.messageFont", base);
-        UIManager.put("OptionPane.buttonFont", base);
-    }
 
     /**
      * Create the application.
@@ -124,55 +91,32 @@ public class Principal extends JFrame {
      */
     private void initialize() {
         ensureTablePreview();
-        setTitle("Iva Asins");
         setBounds(100, 100, 1100, 720);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setContentPane(rootPanel);
         setLocationRelativeTo(null);
-
-        Color appBg = new Color(245, 246, 248);
-        Color cardBg = new Color(255, 255, 255);
-        rootPanel.setBackground(appBg);
-        panelTop.setBackground(cardBg);
-        if (panelFields != null) {
-            panelFields.setOpaque(false);
+        setTitle(resolveWindowTitle());
+        if (menuBar != null) {
+            setJMenuBar(menuBar);
         }
-        panelButtons.setOpaque(false);
-        panelStatus.setBackground(appBg);
-
-        JMenuBar menuBar = new JMenuBar();
-        setJMenuBar(menuBar);
-
-        JMenu mnFile = new JMenu("File");
-        menuBar.add(mnFile);
-
-        JMenuItem mntmManual = new JMenuItem("Manual");
-        mnFile.add(mntmManual);
-
-        JMenuItem mntmSalir = new JMenuItem("Salir");
-        mntmSalir.addActionListener(e -> System.exit(0));
-        mnFile.add(mntmSalir);
-
-        JMenuItem mntmTitle = new JMenuItem("Iva Asins");
-        menuBar.add(mntmTitle);
-
-        tablePreview.setRowHeight(22);
-        tablePreview.setFillsViewportHeight(true);
-        tablePreview.setGridColor(new Color(225, 228, 232));
-        JScrollPane ownerScrollPane = scrollPane;
-        if (ownerScrollPane == null) {
-            ownerScrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, tablePreview);
+        if (mntmManual != null) {
+            mntmManual.addActionListener(e -> showManual());
         }
-        if (ownerScrollPane != null) {
-            ownerScrollPane.getViewport().setBackground(Color.WHITE);
+        if (mntmSalir != null) {
+            mntmSalir.addActionListener(e -> System.exit(0));
         }
+        if (btnHelp != null) {
+            btnHelp.addActionListener(e -> showManual());
+            btnHelp.setToolTipText("Manual de usuario");
+        }
+
+        applyFriendlyPalette();
+        applyWindowIcon();
 
         btnBuscarBase.addActionListener(e -> onSelectBase());
         btnBuscarReporte.addActionListener(e -> onSelectReporte());
-        btnPreview.addActionListener(e -> onPreview());
-        btnExport.addActionListener(e -> onExport());
+        btnPreview.addActionListener(e -> onProcess());
         btnClear.addActionListener(e -> onClear());
-        btnExportRechazados.addActionListener(e -> onExportRechazados());
 
         installFileDrop(rootPanel);
         installFileDrop(panelTop);
@@ -180,84 +124,56 @@ public class Principal extends JFrame {
         installFileDrop(tablePreview);
         installFileDrop(txtBase);
         installFileDrop(txtReporte);
-
-        updateRechazadosButtonEnabled(false);
     }
 
     private void onSelectBase() {
-        File file = chooseOpenFile("Selecciona el CSV base", "csv");
+        File file = chooseOpenFile("Selecciona la base (.csv o .xlsx)", new String[] { "csv", "xlsx" });
         if (file != null) {
             txtBase.setText(file.getAbsolutePath());
         }
     }
 
     private void onSelectReporte() {
-        File file = chooseOpenFile("Selecciona el reporte .txt", "txt");
+        File file = chooseOpenFile("Selecciona el reporte .txt", new String[] { "txt" });
         if (file != null) {
             txtReporte.setText(file.getAbsolutePath());
         }
     }
 
-    private void onPreview() {
-        File base = getFileFromField(txtBase, "CSV base");
+    private void onProcess() {
+        File base = getFileFromField(txtBase, "base (.csv o .xlsx)");
         if (base == null) {
+            return;
+        }
+        if (!isCsvOrXlsx(base)) {
+            showError("La base debe ser un archivo .csv o .xlsx.");
             return;
         }
         File reporte = getFileFromField(txtReporte, "reporte .txt");
         if (reporte == null) {
             return;
         }
-
-        runMotor(base, reporte, true, null);
-    }
-
-    private void onExport() {
-        File base = getFileFromField(txtBase, "CSV base");
-        if (base == null) {
+        if (!isTxt(reporte)) {
+            showError("El reporte debe ser un archivo .txt.");
             return;
         }
-        File reporte = getFileFromField(txtReporte, "reporte .txt");
-        if (reporte == null) {
+        String sheetName = resolveSheetName(base);
+        if (isXlsx(base) && sheetName == null) {
             return;
         }
-
-        File destino = chooseSaveFile("Guardar Asins_Taxes.csv", "Asins_Taxes.csv", "csv");
-        if (destino == null) {
-            return;
-        }
-        if (destino.exists()) {
-            int option = JOptionPane.showConfirmDialog(this,
-                    "El archivo ya existe. ¿Deseas reemplazarlo?", "Confirmar",
-                    JOptionPane.YES_NO_OPTION);
-            if (option != JOptionPane.YES_OPTION) {
-                return;
-            }
-        }
-
-        if (isPreviewValid(base, reporte)) {
-            if (exportTempTo(destino)) {
-                lblStatus.setText("Archivo exportado: " + destino.getName());
-            }
-            return;
-        }
-
-        runMotor(base, reporte, false, destino);
+        runMotor(base, reporte, sheetName);
     }
 
     private void onClear() {
         txtBase.setText("");
         txtReporte.setText("");
         tablePreview.setModel(new DefaultTableModel());
-        lblStatus.setText("Listo. Arrastra archivos .csv y .txt o usa Buscar.");
-        tempOutput = null;
+        lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
+        tempPreview = null;
         tempResumen = null;
-        tempRechazados = null;
-        lastBase = null;
-        lastReporte = null;
-        updateRechazadosButtonEnabled(false);
     }
 
-    private void runMotor(File base, File reporte, boolean showPreview, File exportDestino) {
+    private void runMotor(File base, File reporte, String sheetName) {
         setButtonsEnabled(false);
         lblStatus.setText("Procesando...");
 
@@ -268,10 +184,10 @@ public class Principal extends JFrame {
                 if (!tempDir.exists()) {
                     tempDir.mkdirs();
                 }
-                tempOutput = new File(tempDir, "Asins_Taxes.csv");
-                tempResumen = new File(tempDir, "Asins_Taxes.resumen");
-                tempRechazados = new File(tempDir, "Asins_Taxes.rechazados.csv");
-                return runner.ejecutar(base, reporte, tempOutput, tempResumen, tempRechazados);
+                tempPreview = new File(tempDir, "IvaAsins.preview.csv");
+                tempResumen = new File(tempDir, "IvaAsins.resumen");
+                File reporteOut = new File(base.getParentFile(), "Reporte_Iva_Process.txt");
+                return runner.ejecutar(base, reporte, tempPreview, tempResumen, reporteOut, sheetName);
             }
 
             @Override
@@ -284,114 +200,38 @@ public class Principal extends JFrame {
                         lblStatus.setText("Error en el proceso.");
                         return;
                     }
-                    lastBase = base;
-                    lastReporte = reporte;
-                    if (showPreview) {
-                        loadPreview(tempOutput, 100);
-                        lblStatus.setText("Listo. Filas generadas: " + resultado.procesados);
-                        showSummaryPopup(resultado);
-                    }
-                    if (exportDestino != null) {
-                        if (exportTempTo(exportDestino)) {
-                            lblStatus.setText("Archivo exportado: " + exportDestino.getName());
-                        } else {
-                            return;
-                        }
-                    }
-                    // El resumen ya incluye duplicados y cancelados.
-                    if (!showPreview && exportDestino == null) {
-                        lblStatus.setText("Listo. Filas generadas: " + resultado.procesados);
-                    }
-                    updateRechazadosButtonEnabled(resultado.rechazadosTotal > 0);
+                    loadPreview(tempPreview, 100);
+                    lblStatus.setText("Base actualizada. Agregados: " + resultado.agregados
+                            + " | Modificados: " + resultado.modificados
+                            + " | Reporte: Reporte_Iva_Process.txt");
+                    showSummaryPopup(resultado);
                 } catch (Exception ex) {
                     showError(ex.getMessage());
                     lblStatus.setText("Error en el proceso.");
-                    updateRechazadosButtonEnabled(false);
                 }
             }
         };
         worker.execute();
     }
-
-    private void onExportRechazados() {
-        if (tempRechazados == null || !tempRechazados.exists()) {
-            showError("No hay archivo de no procesados disponible. Ejecuta una previsualización primero.");
-            return;
-        }
-        File destino = chooseSaveFile("Guardar Asins_Rechazados.csv", "Asins_Rechazados.csv", "csv");
-        if (destino != null) {
-            exportRechazadosTo(destino, tempRechazados);
-        }
+    private File chooseOpenFile(String title, String[] extensions) {
+        return chooseFile(title, extensions, false, null);
     }
 
-    private boolean exportTempTo(File destino) {
-        try {
-            Files.copy(tempOutput.toPath(), destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            JOptionPane.showMessageDialog(this, "Archivo exportado correctamente.");
-            return true;
-        } catch (IOException ex) {
-            showError("No se pudo exportar el archivo: " + ex.getMessage());
-            return false;
-        }
-    }
-
-    private boolean exportRechazadosTo(File destino, File origen) {
-        if (origen == null || !origen.exists()) {
-            showError("No se encontró el archivo de rechazados.");
-            return false;
-        }
-        if (destino.exists()) {
-            int option = JOptionPane.showConfirmDialog(this,
-                    "El archivo ya existe. ¿Deseas reemplazarlo?", "Confirmar",
-                    JOptionPane.YES_NO_OPTION);
-            if (option != JOptionPane.YES_OPTION) {
-                return false;
-            }
-        }
-        try {
-            Files.copy(origen.toPath(), destino.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            JOptionPane.showMessageDialog(this, "Archivo de rechazados exportado correctamente.");
-            return true;
-        } catch (IOException ex) {
-            showError("No se pudo exportar el archivo de rechazados: " + ex.getMessage());
-            return false;
-        }
-    }
-
-    private void updateRechazadosButtonEnabled(boolean enabled) {
-        if (btnExportRechazados != null) {
-            btnExportRechazados.setEnabled(enabled && tempRechazados != null && tempRechazados.exists());
-        }
-    }
-
-    private boolean isPreviewValid(File base, File reporte) {
-        return tempOutput != null && tempOutput.exists()
-                && sameFile(base, lastBase)
-                && sameFile(reporte, lastReporte);
-    }
-
-    private boolean sameFile(File a, File b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        return a.getAbsolutePath().equalsIgnoreCase(b.getAbsolutePath());
-    }
-
-    private File chooseOpenFile(String title, String extension) {
-        return chooseFile(title, extension, false, null);
-    }
-
-    private File chooseSaveFile(String title, String defaultName, String extension) {
-        return chooseFile(title, extension, true, defaultName);
-    }
-
-    private File chooseFile(String title, String extension, boolean save, String defaultName) {
+    private File chooseFile(String title, String[] extensions, boolean save, String defaultName) {
         FileDialog dialog = new FileDialog(this, title, save ? FileDialog.SAVE : FileDialog.LOAD);
         if (defaultName != null) {
             dialog.setFile(defaultName);
         }
-        if (!save && extension != null) {
-            dialog.setFilenameFilter((dir, name) -> name.toLowerCase().endsWith("." + extension));
+        if (!save && extensions != null && extensions.length > 0) {
+            dialog.setFilenameFilter((dir, name) -> {
+                String lower = name.toLowerCase();
+                for (String ext : extensions) {
+                    if (lower.endsWith("." + ext.toLowerCase())) {
+                        return true;
+                    }
+                }
+                return false;
+            });
         }
         dialog.setVisible(true);
         String file = dialog.getFile();
@@ -399,9 +239,6 @@ public class Principal extends JFrame {
             return null;
         }
         File selected = new File(dialog.getDirectory(), file);
-        if (save && extension != null && !selected.getName().toLowerCase().endsWith("." + extension)) {
-            selected = new File(selected.getParentFile(), selected.getName() + "." + extension);
-        }
         return selected;
     }
 
@@ -417,6 +254,57 @@ public class Principal extends JFrame {
             return null;
         }
         return file;
+    }
+
+    private boolean isXlsx(File file) {
+        if (file == null) {
+            return false;
+        }
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".xlsx");
+    }
+
+    private boolean isCsvOrXlsx(File file) {
+        if (file == null) {
+            return false;
+        }
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".csv") || name.endsWith(".xlsx");
+    }
+
+    private boolean isTxt(File file) {
+        if (file == null) {
+            return false;
+        }
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".txt");
+    }
+
+    private String resolveSheetName(File base) {
+        if (!isXlsx(base)) {
+            return null;
+        }
+        try {
+            List<String> sheets = runner.listarHojas(base);
+            if (sheets == null || sheets.isEmpty()) {
+                showError("No se encontraron hojas en el archivo XLSX.");
+                return null;
+            }
+            String target = "IVA's Base de Datos";
+            for (String sheet : sheets) {
+                if (sheet.equalsIgnoreCase(target)) {
+                    return sheet;
+                }
+            }
+            Object selection = JOptionPane.showInputDialog(this,
+                    "No se encontró la hoja \"IVA's Base de Datos\". Selecciona una hoja:",
+                    "Seleccionar hoja", JOptionPane.QUESTION_MESSAGE, null,
+                    sheets.toArray(new String[0]), sheets.get(0));
+            return selection == null ? null : selection.toString();
+        } catch (Exception ex) {
+            showError("No se pudieron leer las hojas del XLSX: " + ex.getMessage());
+            return null;
+        }
     }
 
     private void loadPreview(File file, int maxRows) throws IOException {
@@ -490,64 +378,235 @@ public class Principal extends JFrame {
 
     private void setButtonsEnabled(boolean enabled) {
         btnPreview.setEnabled(enabled);
-        btnExport.setEnabled(enabled);
         btnClear.setEnabled(enabled);
-        if (btnExportRechazados != null) {
-            btnExportRechazados.setEnabled(enabled && tempRechazados != null && tempRechazados.exists());
-        }
     }
 
     private void showError(String message) {
         JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
     }
 
-    private void showDuplicatesPopup(MotorIvaRunner.Resultado resultado) {
-        StringBuilder msg = new StringBuilder();
-        msg.append("Se encontraron ASIN duplicados en el reporte.\n");
-        msg.append("Se conservaron los que tienen IVA=SI.\n");
-        msg.append("Total de duplicados: ").append(resultado.duplicados);
-        String list = resultado.duplicadosAsin == null ? "" : resultado.duplicadosAsin.trim();
-        if (!list.isEmpty()) {
-            String[] items = list.split(",");
-            int limit = Math.min(items.length, 10);
-            msg.append("\nEjemplos: ");
-            for (int i = 0; i < limit; i++) {
-                if (i > 0) {
-                    msg.append(", ");
-                }
-                msg.append(items[i].trim());
-            }
-            if (items.length > limit) {
-                msg.append(" ...");
+    private String resolveWindowTitle() {
+        if (mnTitle != null) {
+            String title = mnTitle.getText();
+            if (title != null && !title.trim().isEmpty()) {
+                return title.trim();
             }
         }
-        JOptionPane.showMessageDialog(this, msg.toString(), "Duplicados", JOptionPane.WARNING_MESSAGE);
+        return "Iva Asins";
+    }
+
+    private void applyFriendlyPalette() {
+        Color appBg = new Color(244, 247, 251);
+        Color cardBg = new Color(255, 255, 255);
+        Color accent = new Color(47, 111, 173);
+        Color accentSoft = new Color(221, 231, 242);
+        Color headerBg = new Color(234, 242, 248);
+        Color border = new Color(197, 212, 227);
+        Color textPrimary = new Color(31, 41, 55);
+        Color textSecondary = new Color(75, 85, 99);
+        Color selectionBg = new Color(214, 229, 247);
+
+        rootPanel.setBackground(appBg);
+        panelTop.setBackground(cardBg);
+        panelTop.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(12, 12, 12, 12)));
+        if (panelFields != null) {
+            panelFields.setOpaque(false);
+        }
+        panelButtons.setOpaque(false);
+        panelStatus.setBackground(appBg);
+        lblStatus.setForeground(textSecondary);
+
+        styleTextField(txtBase, cardBg, border);
+        styleTextField(txtReporte, cardBg, border);
+        stylePrimaryButton(btnPreview, accent, Color.WHITE);
+        styleSecondaryButton(btnClear, accentSoft, textPrimary, border);
+        styleSecondaryButton(btnBuscarBase, accentSoft, textPrimary, border);
+        styleSecondaryButton(btnBuscarReporte, accentSoft, textPrimary, border);
+        styleHelpButton(btnHelp, accent, Color.WHITE);
+
+        tablePreview.setRowHeight(22);
+        tablePreview.setFillsViewportHeight(true);
+        tablePreview.setGridColor(border);
+        tablePreview.setSelectionBackground(selectionBg);
+        tablePreview.setSelectionForeground(textPrimary);
+        if (tablePreview.getTableHeader() != null) {
+            tablePreview.getTableHeader().setBackground(headerBg);
+            tablePreview.getTableHeader().setForeground(textPrimary);
+        }
+        JScrollPane ownerScrollPane = scrollPane;
+        if (ownerScrollPane == null) {
+            ownerScrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, tablePreview);
+        }
+        if (ownerScrollPane != null) {
+            ownerScrollPane.getViewport().setBackground(cardBg);
+            ownerScrollPane.setBorder(BorderFactory.createLineBorder(border));
+        }
+    }
+
+    private void stylePrimaryButton(JButton button, Color background, Color foreground) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 16));
+    }
+
+    private void styleSecondaryButton(JButton button, Color background, Color foreground, Color border) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+    }
+
+    private void styleTextField(JTextField field, Color background, Color border) {
+        if (field == null) {
+            return;
+        }
+        field.setBackground(background);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+    }
+
+    private void styleHelpButton(JButton button, Color background, Color foreground) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+        button.setPreferredSize(new Dimension(36, 30));
+    }
+
+    private void applyWindowIcon() {
+        Path iconPath = resolveIconPath();
+        if (iconPath == null) {
+            return;
+        }
+        Image icon = Toolkit.getDefaultToolkit().getImage(iconPath.toString());
+        if (icon != null) {
+            setIconImage(icon);
+        }
+    }
+
+    private void showManual() {
+        try {
+            String content = loadManualContent();
+            JTextArea area = new JTextArea(content);
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setCaretPosition(0);
+            JScrollPane pane = new JScrollPane(area);
+            pane.setPreferredSize(new Dimension(760, 520));
+            JOptionPane.showMessageDialog(this, pane, "Manual de usuario", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            showError("No se pudo abrir el manual: " + ex.getMessage());
+        }
+    }
+
+    private String loadManualContent() throws IOException {
+        Path manualPath = resolveManualPath();
+        if (manualPath == null) {
+            throw new FileNotFoundException("No se encontro ManualUsuario.md.");
+        }
+        return new String(Files.readAllBytes(manualPath), StandardCharsets.UTF_8);
+    }
+
+    private Path resolveManualPath() {
+        return resolveFilePath("ManualUsuario.md");
+    }
+
+    private Path resolveIconPath() {
+        return resolveFilePath("IvaAsins.ico");
+    }
+
+    private Path resolveFilePath(String fileName) {
+        Path cwd = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        Path found = searchUpForFile(cwd, fileName, 6);
+        if (found != null) {
+            return found;
+        }
+        try {
+            Path codePath = Paths.get(Principal.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                    .toAbsolutePath();
+            if (Files.isRegularFile(codePath)) {
+                codePath = codePath.getParent();
+            }
+            found = searchUpForFile(codePath, fileName, 6);
+            if (found != null) {
+                return found;
+            }
+        } catch (Exception ex) {
+            // ignore
+        }
+        return null;
+    }
+
+    private Path searchUpForFile(Path start, String fileName, int maxDepth) {
+        Path dir = start;
+        for (int i = 0; i < maxDepth && dir != null; i++) {
+            Path candidate = dir.resolve(fileName);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            dir = dir.getParent();
+        }
+        return null;
     }
 
     private void showSummaryPopup(MotorIvaRunner.Resultado resultado) {
         int total = resultado.totalReporte;
-        int cancelados = resultado.saltadosCancelados;
+        int cancelados = resultado.canceladosFilas;
+        int canceladosAsins = resultado.canceladosAsins;
         int sinAsin = resultado.sinAsinFilas;
         int duplicadasFilas = resultado.duplicadosFilas;
-        int exportado = resultado.procesados;
+        int asinUnicos = resultado.asinUnicosReporte;
+        int agregados = resultado.agregados;
+        int modificados = resultado.modificados;
+        int sinCambios = resultado.sinCambios;
+        int consolidados = resultado.consolidadosBase;
+        int eliminados = resultado.eliminadosBase;
+        int baseOriginal = resultado.baseOriginal;
+        int baseFinal = resultado.baseFinal;
 
         StringBuilder lines = new StringBuilder();
-        lines.append("RESUMEN DE REPORTE\n\n");
-        lines.append(String.format("%-28s %8d%n", "Total filas en reporte", total));
-        lines.append(String.format("%-28s %8d%n", "(-) Cancelados (filas)", cancelados));
-        lines.append(String.format("%-28s %8d%n", "(-) Sin ASIN (filas)", sinAsin));
-        lines.append(String.format("%-28s %8d%n", "(-) Filas duplicadas", duplicadasFilas));
-        lines.append(String.format("%-28s %8s%n", "----------------------------", ""));
-        lines.append(String.format("%-28s %8d%n", "(=) Total exportado", exportado));
+        lines.append("RESUMEN DE PROCESO\n\n");
+        lines.append(String.format("%-28s %8d%n", "Total filas reporte", total));
+        lines.append(String.format("%-28s %8d%n", "Cancelados (filas)", cancelados));
+        lines.append(String.format("%-28s %8d%n", "Cancelados (ASIN)", canceladosAsins));
+        lines.append(String.format("%-28s %8d%n", "Sin ASIN (filas)", sinAsin));
+        lines.append(String.format("%-28s %8d%n", "Duplicados reporte", duplicadasFilas));
+        lines.append(String.format("%-28s %8d%n", "ASIN unicos reporte", asinUnicos));
         lines.append("\n");
-        lines.append(String.format("%-28s %8d%n", "ASIN duplicados (únicos)", resultado.duplicados));
-        lines.append(String.format("%-28s %8d%n", "Match con BD (ASIN)", resultado.matchBd));
-        if (resultado.rechazadosTotal > 0) {
-            lines.append(String.format("%-28s %8d%n", "CSV no procesados", resultado.rechazadosTotal));
-        }
+        lines.append(String.format("%-28s %8d%n", "Agregados nuevos", agregados));
+        lines.append(String.format("%-28s %8d%n", "Modificados IVA", modificados));
+        lines.append(String.format("%-28s %8d%n", "Sin cambios", sinCambios));
+        lines.append(String.format("%-28s %8d%n", "Duplicados base", consolidados));
+        lines.append(String.format("%-28s %8d%n", "Eliminados base", eliminados));
         lines.append("\n");
-        lines.append("Nota: duplicados se cuentan por ASIN único; se conserva 1 (IVA=SI).");
-        lines.append("\nPara exportar no procesados usa el botón correspondiente.");
+        lines.append(String.format("%-28s %8d%n", "Total base antes", baseOriginal));
+        lines.append(String.format("%-28s %8d%n", "Total base despues", baseFinal));
+        lines.append("\n");
+        lines.append("Se genero Reporte_Iva_Process.txt junto a la base.");
 
         String html = "<html><pre>" + lines.toString() + "</pre></html>";
         JOptionPane.showMessageDialog(this, html, "Resumen", JOptionPane.INFORMATION_MESSAGE);
@@ -624,7 +683,7 @@ public class Principal extends JFrame {
                 continue;
             }
             String name = file.getName().toLowerCase();
-            if (name.endsWith(".csv")) {
+            if (name.endsWith(".csv") || name.endsWith(".xlsx")) {
                 txtBase.setText(file.getAbsolutePath());
                 assigned = true;
             } else if (name.endsWith(".txt")) {
@@ -633,7 +692,7 @@ public class Principal extends JFrame {
             }
         }
         if (!assigned) {
-            showError("Solo se aceptan archivos .csv o .txt.");
+            showError("Solo se aceptan archivos .csv/.xlsx o .txt.");
             return false;
         }
         lblStatus.setText("Archivos cargados por arrastre.");
@@ -666,10 +725,10 @@ public class Principal extends JFrame {
 
         panelFields = new JPanel();
         panelFields.setLayout(new GridLayoutManager(2, 3, new Insets(5, 5, 5, 5), -1, -1));
-        panelTop.add(panelFields, BorderLayout.NORTH);
+        panelTop.add(panelFields, BorderLayout.CENTER);
 
         JLabel lblBase = new JLabel();
-        lblBase.setText("Base IVA (.csv)");
+        lblBase.setText("Base IVA (.csv o .xlsx)");
         panelFields.add(lblBase, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
                 GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
                 null, null));
@@ -711,20 +770,12 @@ public class Principal extends JFrame {
         panelTop.add(panelButtons, BorderLayout.SOUTH);
 
         btnPreview = new JButton();
-        btnPreview.setText("Previsualizar");
+        btnPreview.setText("Procesar");
         panelButtons.add(btnPreview);
-
-        btnExport = new JButton();
-        btnExport.setText("Exportar");
-        panelButtons.add(btnExport);
 
         btnClear = new JButton();
         btnClear.setText("Limpiar");
         panelButtons.add(btnClear);
-
-        btnExportRechazados = new JButton();
-        btnExportRechazados.setText("Exportar no procesados");
-        panelButtons.add(btnExportRechazados);
 
         scrollPane = new JScrollPane();
         rootPanel.add(scrollPane, BorderLayout.CENTER);
@@ -738,8 +789,27 @@ public class Principal extends JFrame {
         rootPanel.add(panelStatus, BorderLayout.SOUTH);
 
         lblStatus = new JLabel();
-        lblStatus.setText("Listo. Arrastra archivos .csv y .txt o usa Buscar.");
+        lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
         panelStatus.add(lblStatus, BorderLayout.CENTER);
+
+        btnHelp = new JButton();
+        btnHelp.setText("?");
+        panelStatus.add(btnHelp, BorderLayout.EAST);
+
+        menuBar = new JMenuBar();
+        mnFile = new JMenu();
+        mnFile.setText("File");
+        menuBar.add(mnFile);
+        mntmManual = new JMenuItem();
+        mntmManual.setText("Manual");
+        mnFile.add(mntmManual);
+        mntmSalir = new JMenuItem();
+        mntmSalir.setText("Salir");
+        mnFile.add(mntmSalir);
+        mnTitle = new JMenu();
+        mnTitle.setText("Iva Asins");
+        menuBar.add(mnTitle);
+        panelTop.add(menuBar, BorderLayout.NORTH);
 
     }
 }
