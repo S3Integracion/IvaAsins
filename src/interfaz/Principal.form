@@ -13,7 +13,9 @@
     <children>
       <grid id="panelTop" binding="panelTop" layout-manager="BorderLayout" hgap="0" vgap="8">
         <constraints border-constraint="North"/>
-        <properties/>
+        <properties>
+          <background color="-1511169"/>
+        </properties>
         <border type="empty">
           <size top="12" left="12" bottom="12" right="12"/>
         </border>
@@ -31,7 +33,7 @@
                   </grid>
                 </constraints>
                 <properties>
-                  <text value="Base IVA (.csv)"/>
+                  <text value="Base IVA (.csv o .xlsx)"/>
                 </properties>
               </component>
               <component id="txtBase" class="javax.swing.JTextField" binding="txtBase">
@@ -86,13 +88,7 @@
               <component id="btnPreview" class="javax.swing.JButton" binding="btnPreview">
                 <constraints/>
                 <properties>
-                  <text value="Previsualizar"/>
-                </properties>
-              </component>
-              <component id="btnExport" class="javax.swing.JButton" binding="btnExport">
-                <constraints/>
-                <properties>
-                  <text value="Exportar"/>
+                  <text value="Procesar"/>
                 </properties>
               </component>
               <component id="btnClear" class="javax.swing.JButton" binding="btnClear">
@@ -101,19 +97,16 @@
                   <text value="Limpiar"/>
                 </properties>
               </component>
-              <component id="btnExportRechazados" class="javax.swing.JButton" binding="btnExportRechazados">
-                <constraints/>
-                <properties>
-                  <text value="Exportar no procesados"/>
-                </properties>
-              </component>
             </children>
           </grid>
         </children>
       </grid>
       <component id="scrollPane" class="javax.swing.JScrollPane" binding="scrollPane">
         <constraints border-constraint="Center"/>
-        <properties/>
+        <properties>
+          <background color="-1511169"/>
+          <enabled value="true"/>
+        </properties>
       </component>
       <grid id="panelStatus" binding="panelStatus" layout-manager="BorderLayout" hgap="0" vgap="0">
         <constraints border-constraint="South"/>
@@ -125,7 +118,7 @@
           <component id="lblStatus" class="javax.swing.JLabel" binding="lblStatus">
             <constraints border-constraint="Center"/>
             <properties>
-              <text value="Listo. Arrastra archivos .csv y .txt o usa Buscar."/>
+              <text value="Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar."/>
             </properties>
           </component>
         </children>

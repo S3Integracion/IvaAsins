@@ -19,23 +19,28 @@ public class MotorIvaRunner {
     public static class Resultado {
         public boolean ok;
         public String mensaje;
-        public int duplicados;
-        public String duplicadosAsin;
-        public int procesados;
-        public int saltadosBase;
-        public int saltadosCancelados;
         public int totalReporte;
-        public int matchBd;
-        public int rechazadosTotal;
         public int duplicadosFilas;
+        public int canceladosFilas;
+        public int canceladosAsins;
         public int sinAsinFilas;
-        public File rechazados;
-        public File salida;
+        public int asinUnicosReporte;
+        public int agregados;
+        public int modificados;
+        public int sinCambios;
+        public int consolidadosBase;
+        public int eliminadosBase;
+        public int baseOriginal;
+        public int baseFinal;
+        public int previewInicio;
+        public File preview;
         public File resumen;
+        public File reporte;
         public String stdout;
     }
 
-    public Resultado ejecutar(File baseCsv, File reporteTxt, File salidaCsv, File resumenFile, File rechazadosFile)
+    public Resultado ejecutar(File baseFile, File reporteTxt, File previewCsv, File resumenFile, File reporteOutFile,
+            String sheetName)
             throws IOException, InterruptedException {
         Path motoresDir = findMotoresDir();
         if (motoresDir == null) {
@@ -51,24 +56,22 @@ public class MotorIvaRunner {
             throw new FileNotFoundException("No se encontró FormatearIva.exe ni FormatearIva.py en: " + motorDir);
         }
 
-        List<String> cmd = new ArrayList<>();
-        if (useExe) {
-            cmd.add(exe.toString());
-        } else {
-            cmd.addAll(resolvePythonCommand());
-            cmd.add(py.toString());
-        }
+        List<String> cmd = buildCommand(useExe, exe, py);
         cmd.add("--base");
-        cmd.add(baseCsv.getAbsolutePath());
+        cmd.add(baseFile.getAbsolutePath());
         cmd.add("--reporte");
         cmd.add(reporteTxt.getAbsolutePath());
         cmd.add("--salida");
-        cmd.add(salidaCsv.getAbsolutePath());
+        cmd.add(previewCsv.getAbsolutePath());
         cmd.add("--resumen");
         cmd.add(resumenFile.getAbsolutePath());
-        if (rechazadosFile != null) {
-            cmd.add("--rechazados");
-            cmd.add(rechazadosFile.getAbsolutePath());
+        if (reporteOutFile != null) {
+            cmd.add("--reporte-out");
+            cmd.add(reporteOutFile.getAbsolutePath());
+        }
+        if (sheetName != null && !sheetName.trim().isEmpty()) {
+            cmd.add("--sheet");
+            cmd.add(sheetName.trim());
         }
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -87,9 +90,9 @@ public class MotorIvaRunner {
 
         Resultado resultado = new Resultado();
         resultado.stdout = output.toString().trim();
-        resultado.salida = salidaCsv;
+        resultado.preview = previewCsv;
         resultado.resumen = resumenFile;
-        resultado.rechazados = rechazadosFile;
+        resultado.reporte = reporteOutFile;
 
         if (exitCode != 0) {
             resultado.ok = false;
@@ -109,20 +112,20 @@ public class MotorIvaRunner {
         }
 
         resultado.ok = Boolean.parseBoolean(props.getProperty("ok", "true"));
-        resultado.duplicados = parseInt(props.getProperty("duplicados", "0"));
-        resultado.duplicadosAsin = props.getProperty("duplicados_asin", "");
-        resultado.procesados = parseInt(props.getProperty("procesados", "0"));
-        resultado.saltadosBase = parseInt(props.getProperty("saltados_base", "0"));
-        resultado.saltadosCancelados = parseInt(props.getProperty("saltados_cancelados", "0"));
         resultado.totalReporte = parseInt(props.getProperty("total_reporte", "0"));
-        resultado.matchBd = parseInt(props.getProperty("match_bd", "0"));
-        resultado.rechazadosTotal = parseInt(props.getProperty("rechazados_total", "0"));
         resultado.duplicadosFilas = parseInt(props.getProperty("duplicados_filas", "0"));
+        resultado.canceladosFilas = parseInt(props.getProperty("cancelados_filas", "0"));
+        resultado.canceladosAsins = parseInt(props.getProperty("cancelados_asins", "0"));
         resultado.sinAsinFilas = parseInt(props.getProperty("sin_asin_filas", "0"));
-        String rechazadosPath = props.getProperty("rechazados_archivo", "").trim();
-        if (!rechazadosPath.isEmpty()) {
-            resultado.rechazados = new File(rechazadosPath);
-        }
+        resultado.asinUnicosReporte = parseInt(props.getProperty("asin_unicos_reporte", "0"));
+        resultado.agregados = parseInt(props.getProperty("agregados", "0"));
+        resultado.modificados = parseInt(props.getProperty("modificados", "0"));
+        resultado.sinCambios = parseInt(props.getProperty("sin_cambios", "0"));
+        resultado.consolidadosBase = parseInt(props.getProperty("consolidados_base", "0"));
+        resultado.eliminadosBase = parseInt(props.getProperty("eliminados_base", "0"));
+        resultado.baseOriginal = parseInt(props.getProperty("base_original", "0"));
+        resultado.baseFinal = parseInt(props.getProperty("base_final", "0"));
+        resultado.previewInicio = parseInt(props.getProperty("preview_inicio", "0"));
         resultado.mensaje = "OK";
         return resultado;
     }
@@ -133,6 +136,59 @@ public class MotorIvaRunner {
         } catch (Exception ex) {
             return 0;
         }
+    }
+
+    public List<String> listarHojas(File baseXlsx) throws IOException, InterruptedException {
+        Path motoresDir = findMotoresDir();
+        if (motoresDir == null) {
+            throw new FileNotFoundException("No se encontró la carpeta 'motores'.");
+        }
+        Path motorDir = motoresDir.resolve("FormatearIva");
+        Path exe = motorDir.resolve("FormatearIva.exe");
+        Path py = motorDir.resolve("FormatearIva.py");
+        boolean useExe = Files.exists(exe);
+        if (!useExe && !Files.exists(py)) {
+            throw new FileNotFoundException("No se encontró FormatearIva.exe ni FormatearIva.py en: " + motorDir);
+        }
+
+        List<String> cmd = buildCommand(useExe, exe, py);
+        cmd.add("--base");
+        cmd.add(baseXlsx.getAbsolutePath());
+        cmd.add("--list-sheets");
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        List<String> sheets = new ArrayList<>();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append(System.lineSeparator());
+                if (!line.trim().isEmpty()) {
+                    sheets.add(line.trim());
+                }
+            }
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            String msg = output.toString().trim();
+            throw new IOException(msg.isEmpty() ? "Error al listar hojas." : msg);
+        }
+        return sheets;
+    }
+
+    private List<String> buildCommand(boolean useExe, Path exe, Path py) {
+        List<String> cmd = new ArrayList<>();
+        if (useExe) {
+            cmd.add(exe.toString());
+        } else {
+            cmd.addAll(resolvePythonCommand());
+            cmd.add(py.toString());
+        }
+        return cmd;
     }
 
     private List<String> resolvePythonCommand() {
