@@ -7,6 +7,9 @@ import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
 import java.awt.Insets;
+import java.awt.Cursor;
+import java.awt.Image;
+import java.awt.Toolkit;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.DnDConstants;
 import java.awt.dnd.DropTarget;
@@ -14,9 +17,12 @@ import java.awt.dnd.DropTargetAdapter;
 import java.awt.dnd.DropTargetDropEvent;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -32,6 +38,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
@@ -60,6 +67,12 @@ public class Principal extends JFrame {
     private JButton btnClear;
     private JButton btnBuscarBase;
     private JButton btnBuscarReporte;
+    private JButton btnHelp;
+    private JMenuBar menuBar;
+    private JMenu mnFile;
+    private JMenuItem mntmManual;
+    private JMenuItem mntmSalir;
+    private JMenu mnTitle;
 
     private File tempPreview;
     private File tempResumen;
@@ -78,48 +91,27 @@ public class Principal extends JFrame {
      */
     private void initialize() {
         ensureTablePreview();
-        setTitle("Iva Asins");
         setBounds(100, 100, 1100, 720);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setContentPane(rootPanel);
         setLocationRelativeTo(null);
-
-        Color appBg = new Color(245, 246, 248);
-        Color cardBg = new Color(255, 255, 255);
-        rootPanel.setBackground(appBg);
-        panelTop.setBackground(cardBg);
-        if (panelFields != null) {
-            panelFields.setOpaque(false);
+        setTitle(resolveWindowTitle());
+        if (menuBar != null) {
+            setJMenuBar(menuBar);
         }
-        panelButtons.setOpaque(false);
-        panelStatus.setBackground(appBg);
-
-        JMenuBar menuBar = new JMenuBar();
-        setJMenuBar(menuBar);
-
-        JMenu mnFile = new JMenu("File");
-        menuBar.add(mnFile);
-
-        JMenuItem mntmManual = new JMenuItem("Manual");
-        mnFile.add(mntmManual);
-
-        JMenuItem mntmSalir = new JMenuItem("Salir");
-        mntmSalir.addActionListener(e -> System.exit(0));
-        mnFile.add(mntmSalir);
-
-        JMenuItem mntmTitle = new JMenuItem("Iva Asins");
-        menuBar.add(mntmTitle);
-
-        tablePreview.setRowHeight(22);
-        tablePreview.setFillsViewportHeight(true);
-        tablePreview.setGridColor(new Color(225, 228, 232));
-        JScrollPane ownerScrollPane = scrollPane;
-        if (ownerScrollPane == null) {
-            ownerScrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, tablePreview);
+        if (mntmManual != null) {
+            mntmManual.addActionListener(e -> showManual());
         }
-        if (ownerScrollPane != null) {
-            ownerScrollPane.getViewport().setBackground(Color.WHITE);
+        if (mntmSalir != null) {
+            mntmSalir.addActionListener(e -> System.exit(0));
         }
+        if (btnHelp != null) {
+            btnHelp.addActionListener(e -> showManual());
+            btnHelp.setToolTipText("Manual de usuario");
+        }
+
+        applyFriendlyPalette();
+        applyWindowIcon();
 
         btnBuscarBase.addActionListener(e -> onSelectBase());
         btnBuscarReporte.addActionListener(e -> onSelectReporte());
@@ -393,6 +385,194 @@ public class Principal extends JFrame {
         JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
     }
 
+    private String resolveWindowTitle() {
+        if (mnTitle != null) {
+            String title = mnTitle.getText();
+            if (title != null && !title.trim().isEmpty()) {
+                return title.trim();
+            }
+        }
+        return "Iva Asins";
+    }
+
+    private void applyFriendlyPalette() {
+        Color appBg = new Color(244, 247, 251);
+        Color cardBg = new Color(255, 255, 255);
+        Color accent = new Color(47, 111, 173);
+        Color accentSoft = new Color(221, 231, 242);
+        Color headerBg = new Color(234, 242, 248);
+        Color border = new Color(197, 212, 227);
+        Color textPrimary = new Color(31, 41, 55);
+        Color textSecondary = new Color(75, 85, 99);
+        Color selectionBg = new Color(214, 229, 247);
+
+        rootPanel.setBackground(appBg);
+        panelTop.setBackground(cardBg);
+        panelTop.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(12, 12, 12, 12)));
+        if (panelFields != null) {
+            panelFields.setOpaque(false);
+        }
+        panelButtons.setOpaque(false);
+        panelStatus.setBackground(appBg);
+        lblStatus.setForeground(textSecondary);
+
+        styleTextField(txtBase, cardBg, border);
+        styleTextField(txtReporte, cardBg, border);
+        stylePrimaryButton(btnPreview, accent, Color.WHITE);
+        styleSecondaryButton(btnClear, accentSoft, textPrimary, border);
+        styleSecondaryButton(btnBuscarBase, accentSoft, textPrimary, border);
+        styleSecondaryButton(btnBuscarReporte, accentSoft, textPrimary, border);
+        styleHelpButton(btnHelp, accent, Color.WHITE);
+
+        tablePreview.setRowHeight(22);
+        tablePreview.setFillsViewportHeight(true);
+        tablePreview.setGridColor(border);
+        tablePreview.setSelectionBackground(selectionBg);
+        tablePreview.setSelectionForeground(textPrimary);
+        if (tablePreview.getTableHeader() != null) {
+            tablePreview.getTableHeader().setBackground(headerBg);
+            tablePreview.getTableHeader().setForeground(textPrimary);
+        }
+        JScrollPane ownerScrollPane = scrollPane;
+        if (ownerScrollPane == null) {
+            ownerScrollPane = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, tablePreview);
+        }
+        if (ownerScrollPane != null) {
+            ownerScrollPane.getViewport().setBackground(cardBg);
+            ownerScrollPane.setBorder(BorderFactory.createLineBorder(border));
+        }
+    }
+
+    private void stylePrimaryButton(JButton button, Color background, Color foreground) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createEmptyBorder(6, 16, 6, 16));
+    }
+
+    private void styleSecondaryButton(JButton button, Color background, Color foreground, Color border) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(6, 12, 6, 12)));
+    }
+
+    private void styleTextField(JTextField field, Color background, Color border) {
+        if (field == null) {
+            return;
+        }
+        field.setBackground(background);
+        field.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border),
+                BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+    }
+
+    private void styleHelpButton(JButton button, Color background, Color foreground) {
+        if (button == null) {
+            return;
+        }
+        button.setBackground(background);
+        button.setForeground(foreground);
+        button.setOpaque(true);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(BorderFactory.createEmptyBorder(4, 10, 4, 10));
+        button.setPreferredSize(new Dimension(36, 30));
+    }
+
+    private void applyWindowIcon() {
+        Path iconPath = resolveIconPath();
+        if (iconPath == null) {
+            return;
+        }
+        Image icon = Toolkit.getDefaultToolkit().getImage(iconPath.toString());
+        if (icon != null) {
+            setIconImage(icon);
+        }
+    }
+
+    private void showManual() {
+        try {
+            String content = loadManualContent();
+            JTextArea area = new JTextArea(content);
+            area.setEditable(false);
+            area.setLineWrap(true);
+            area.setWrapStyleWord(true);
+            area.setCaretPosition(0);
+            JScrollPane pane = new JScrollPane(area);
+            pane.setPreferredSize(new Dimension(760, 520));
+            JOptionPane.showMessageDialog(this, pane, "Manual de usuario", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            showError("No se pudo abrir el manual: " + ex.getMessage());
+        }
+    }
+
+    private String loadManualContent() throws IOException {
+        Path manualPath = resolveManualPath();
+        if (manualPath == null) {
+            throw new FileNotFoundException("No se encontro ManualUsuario.md.");
+        }
+        return new String(Files.readAllBytes(manualPath), StandardCharsets.UTF_8);
+    }
+
+    private Path resolveManualPath() {
+        return resolveFilePath("ManualUsuario.md");
+    }
+
+    private Path resolveIconPath() {
+        return resolveFilePath("IvaAsins.ico");
+    }
+
+    private Path resolveFilePath(String fileName) {
+        Path cwd = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        Path found = searchUpForFile(cwd, fileName, 6);
+        if (found != null) {
+            return found;
+        }
+        try {
+            Path codePath = Paths.get(Principal.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+                    .toAbsolutePath();
+            if (Files.isRegularFile(codePath)) {
+                codePath = codePath.getParent();
+            }
+            found = searchUpForFile(codePath, fileName, 6);
+            if (found != null) {
+                return found;
+            }
+        } catch (Exception ex) {
+            // ignore
+        }
+        return null;
+    }
+
+    private Path searchUpForFile(Path start, String fileName, int maxDepth) {
+        Path dir = start;
+        for (int i = 0; i < maxDepth && dir != null; i++) {
+            Path candidate = dir.resolve(fileName);
+            if (Files.isRegularFile(candidate)) {
+                return candidate;
+            }
+            dir = dir.getParent();
+        }
+        return null;
+    }
+
     private void showSummaryPopup(MotorIvaRunner.Resultado resultado) {
         int total = resultado.totalReporte;
         int cancelados = resultado.canceladosFilas;
@@ -545,7 +725,7 @@ public class Principal extends JFrame {
 
         panelFields = new JPanel();
         panelFields.setLayout(new GridLayoutManager(2, 3, new Insets(5, 5, 5, 5), -1, -1));
-        panelTop.add(panelFields, BorderLayout.NORTH);
+        panelTop.add(panelFields, BorderLayout.CENTER);
 
         JLabel lblBase = new JLabel();
         lblBase.setText("Base IVA (.csv o .xlsx)");
@@ -611,6 +791,25 @@ public class Principal extends JFrame {
         lblStatus = new JLabel();
         lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
         panelStatus.add(lblStatus, BorderLayout.CENTER);
+
+        btnHelp = new JButton();
+        btnHelp.setText("?");
+        panelStatus.add(btnHelp, BorderLayout.EAST);
+
+        menuBar = new JMenuBar();
+        mnFile = new JMenu();
+        mnFile.setText("File");
+        menuBar.add(mnFile);
+        mntmManual = new JMenuItem();
+        mntmManual.setText("Manual");
+        mnFile.add(mntmManual);
+        mntmSalir = new JMenuItem();
+        mntmSalir.setText("Salir");
+        mnFile.add(mntmSalir);
+        mnTitle = new JMenu();
+        mnTitle.setText("Iva Asins");
+        menuBar.add(mnTitle);
+        panelTop.add(menuBar, BorderLayout.NORTH);
 
     }
 }
