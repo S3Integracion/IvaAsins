@@ -1,5 +1,5 @@
 REPORTE IVA PROCESS
-Fecha/Hora: 2026-02-06 12:15:14
+Fecha/Hora: 2026-02-06 12:33:18
 
 RESUMEN GENERAL
 Base: C:\Users\Public\GitHub\IvaAsins\Resources\IVA's Base de Datos.xlsx
