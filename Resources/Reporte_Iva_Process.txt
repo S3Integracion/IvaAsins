@@ -1,9 +1,10 @@
 REPORTE IVA PROCESS
-Fecha/Hora: 2026-02-04 16:49:56
+Fecha/Hora: 2026-02-06 12:15:14
 
 RESUMEN GENERAL
-Base: C:\Users\Public\GitHub\IvaAsins\Resources\IVA's Base de Datos.csv
-Tipo base: CSV
+Base: C:\Users\Public\GitHub\IvaAsins\Resources\IVA's Base de Datos.xlsx
+Tipo base: XLSX
+Hoja usada: Base de Datos IVA Amazon
 Reporte inventario: C:\Users\Public\GitHub\IvaAsins\Resources\147411125319020475.txt
 Total filas en reporte: 1912
 Filas canceladas: 157 (ASIN unicos: 73)
@@ -15,7 +16,7 @@ Modificados (IVA cambiado): 18
 Sin cambios (IVA igual): 1299
 Duplicados en base consolidados: 2300
 Eliminados de base (filas): 2803
-Total base antes: 49011
+Total base antes: 51814
 Total base despues: 49014
 Vista previa inicia en fila (sin encabezado): 49012
 

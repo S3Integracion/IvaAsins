@@ -664,7 +664,7 @@ def main():
         'sin_cambios': str(unchanged),
         'consolidados_base': str(len(set(base_duplicates))),
         'eliminados_base': str(len(base_duplicates)),
-        'base_original': str(len(base_map) - len(added)),
+        'base_original': str(base_original_rows),
         'base_final': str(len(base_map)),
         'preview_inicio': str(first_new_index),
     }
