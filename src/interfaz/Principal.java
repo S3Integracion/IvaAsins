@@ -608,7 +608,7 @@ public class Principal extends JFrame {
         lines.append("\n");
         lines.append("Se genero Reporte_Iva_Process.txt junto a la base.");
 
-        String html = "<html><pre>" + lines.toString() + "</pre></html>";
+        String html = "<html><pre>" + lines.toString();
         JOptionPane.showMessageDialog(this, html, "Resumen", JOptionPane.INFORMATION_MESSAGE);
     }
 

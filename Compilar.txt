@@ -1,0 +1,66 @@
+Compilar IvaAsins (Windows / PowerShell)
+
+Requisitos:
+- JDK con jpackage (JDK 14+).
+- Python 3 y pip.
+- PyInstaller (se instala en el paso del motor).
+- UI Designer: debe existir out\production\IvaAsins\com\intellij\uiDesigner\core.
+  Si no existe, abre el proyecto en IntelliJ y ejecuta "Build Project".
+  Alternativa: usar forms_rt.jar en el classpath (ver nota al final).
+
+Estructura final esperada para instalador:
+dist\IvaAsins\IvaAsins.exe
+dist\IvaAsins\motores\FormatearIva\FormatearIva.exe
+dist\IvaAsins\ManualUsuario.md
+dist\IvaAsins\IvaAsins.ico
+
+Paso 1) Definir rutas de trabajo
+```powershell
+$Root = Resolve-Path .
+$Build = Join-Path $Root "build\java"
+$Dist = Join-Path $Root "dist"
+$AppImage = Join-Path $Dist "IvaAsins"
+```
+
+Paso 2) Compilar Java y crear JAR
+```powershell
+New-Item -ItemType Directory -Force -Path "$Build\classes" | Out-Null
+$Sources = Get-ChildItem -Recurse -Filter *.java "$Root\src" | ForEach-Object { $_.FullName }
+javac -encoding UTF-8 -d "$Build\classes" -cp "$Root\out\production\IvaAsins" $Sources
+New-Item -ItemType Directory -Force -Path "$Build\classes\com\intellij\uiDesigner" | Out-Null
+Copy-Item -Recurse -Force "$Root\out\production\IvaAsins\com\intellij\uiDesigner\core" "$Build\classes\com\intellij\uiDesigner\core"
+jar --create --file "$Build\IvaAsins.jar" --main-class control.Main -C "$Build\classes" .
+```
+
+Paso 3) Convertir JAR a EXE (app-image)
+```powershell
+jpackage --type app-image --name IvaAsins --dest "$Dist" --input "$Build" --main-jar IvaAsins.jar --icon "$Root\IvaAsins.ico" --java-options "-Dfile.encoding=UTF-8"
+```
+
+Paso 4) Compilar motor Python a EXE
+```powershell
+Push-Location "$Root\motores\FormatearIva"
+python -m pip install --upgrade pyinstaller
+pyinstaller --onefile --name FormatearIva --add-data "vendor;vendor" --hidden-import __future__ FormatearIva.py
+Pop-Location
+```
+
+Paso 5) Ensamblar carpeta final para instalador
+```powershell
+New-Item -ItemType Directory -Force -Path "$AppImage\motores\FormatearIva" | Out-Null
+Copy-Item "$Root\motores\FormatearIva\dist\FormatearIva.exe" "$AppImage\motores\FormatearIva\FormatearIva.exe" -Force
+Copy-Item "$Root\ManualUsuario.md" "$AppImage\ManualUsuario.md" -Force
+Copy-Item "$Root\IvaAsins.ico" "$AppImage\IvaAsins.ico" -Force
+```
+
+Paso 6) Verificar ejecucion
+```powershell
+& "$AppImage\IvaAsins.exe"
+```
+
+Nota: Si no tienes out\production\IvaAsins\com\intellij\uiDesigner\core,
+puedes usar forms_rt.jar en el classpath. Ejemplo:
+```powershell
+javac -encoding UTF-8 -d "$Build\classes" -cp "C:\ruta\forms_rt.jar" $Sources
+jar --create --file "$Build\IvaAsins.jar" --main-class control.Main -C "$Build\classes" .
+```

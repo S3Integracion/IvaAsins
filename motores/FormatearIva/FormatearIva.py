@@ -14,39 +14,64 @@ import argparse
 import csv
 # Comentario tecnico: os provee operaciones de filesystem y resolucion de rutas.
 import os
+import subprocess
+import tempfile
+import re
+import uuid
+import zipfile
 # Comentario tecnico: sys permite manipular sys.path y escribir errores en stderr.
 import sys
 # Comentario tecnico: OrderedDict preserva orden de insercion en los mapas de ASIN.
 from collections import OrderedDict
 # Comentario tecnico: datetime genera marcas de tiempo para el reporte final.
 from datetime import datetime
+import xml.etree.ElementTree as ET
 
 # Comentario tecnico: nombre por defecto de hoja cuando la base es un XLSX.
 BASE_SHEET_NAME = "IVA's Base de Datos"
+_LAST_EXCEL_LOG = None
+_LAST_EXCEL_VERIFY_LOG = None
 
 
 # Comentario tecnico: agrega ruta de dependencias locales para que openpyxl sea importable.
 def _add_vendor():
-    # Comentario tecnico: calcula el directorio absoluto del archivo actual.
-    here = os.path.dirname(os.path.abspath(__file__))
-    # Comentario tecnico: construye la ruta a la carpeta vendor junto al script.
-    vendor = os.path.join(here, 'vendor')
-    # Comentario tecnico: inserta vendor al inicio de sys.path solo si existe y no esta.
-    if os.path.isdir(vendor) and vendor not in sys.path:
-        # Comentario tecnico: prioriza dependencias locales sobre las del entorno global.
-        sys.path.insert(0, vendor)
+    # Comentario tecnico: candidatos base para ubicar la carpeta vendor.
+    bases = []
+    # Comentario tecnico: usa el directorio del script cuando no esta congelado.
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        bases.append(here)
+    except Exception:
+        pass
+    # Comentario tecnico: en PyInstaller, usa el directorio temporal de extraccion.
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        bases.append(meipass)
+    # Comentario tecnico: agrega la carpeta del ejecutable como fallback.
+    if getattr(sys, 'frozen', False):
+        bases.append(os.path.dirname(sys.executable))
+    # Comentario tecnico: busca vendor en los candidatos y lo agrega a sys.path.
+    for base in bases:
+        vendor = os.path.join(base, 'vendor')
+        if os.path.isdir(vendor) and vendor not in sys.path:
+            # Comentario tecnico: prioriza dependencias locales sobre las del entorno global.
+            sys.path.insert(0, vendor)
+            return vendor
+    # Comentario tecnico: retorna None si no se encontro vendor.
+    return None
 
 
 # Comentario tecnico: encapsula la carga de openpyxl desde vendor o entorno.
 def _load_openpyxl():
     # Comentario tecnico: asegura que vendor este en sys.path antes de importar.
-    _add_vendor()
+    vendor_path = _add_vendor()
     try:
         # Comentario tecnico: import dinamico para evitar dependencia dura si no se usa XLSX.
         import openpyxl  # type: ignore
     except Exception as exc:
         # Comentario tecnico: convierte fallas de import en error controlado del motor.
-        raise RuntimeError('No se pudo cargar openpyxl desde la carpeta vendor.') from exc
+        detail = f" (vendor={vendor_path})" if vendor_path else " (vendor no encontrado)"
+        raise RuntimeError('No se pudo cargar openpyxl desde la carpeta vendor.' + detail + f" Detalle: {exc!r}") from exc
     # Comentario tecnico: retorna el modulo para uso por referencia.
     return openpyxl
 
@@ -319,6 +344,574 @@ def _write_properties(path, data):
         # Comentario tecnico: escribe cada par clave=valor en una linea.
         for key, value in data.items():
             f.write(f"{key}={value}\n")
+
+
+# Comentario tecnico: detecta y preserva la declaracion XML original si existe.
+def _xml_decl(xml_bytes):
+    match = re.match(rb'\s*(<\?xml[^>]*\?>)', xml_bytes)
+    return match.group(1) if match else None
+
+
+# Comentario tecnico: serializa XML intentando mantener la declaracion original.
+def _serialize_xml(root, original_bytes):
+    xml_body = ET.tostring(root, encoding='utf-8')
+    decl = _xml_decl(original_bytes)
+    if decl:
+        return decl + b'\n' + xml_body
+    return xml_body
+
+
+# Comentario tecnico: actualiza core.xml para forzar a Excel a reconocer cambios.
+def _update_core_xml(xml_bytes, document_id=None):
+    try:
+        ns = {
+            'cp': 'http://schemas.openxmlformats.org/package/2006/metadata/core-properties',
+            'dc': 'http://purl.org/dc/elements/1.1/',
+            'dcterms': 'http://purl.org/dc/terms/',
+            'dcmitype': 'http://purl.org/dc/dcmitype/',
+            'xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+        }
+        for prefix, uri in ns.items():
+            ET.register_namespace(prefix, uri)
+        root = ET.fromstring(xml_bytes)
+        modified_tag = f"{{{ns['dcterms']}}}modified"
+        revision_tag = f"{{{ns['cp']}}}revision"
+        modified = root.find(modified_tag)
+        if modified is None:
+            modified = ET.SubElement(root, modified_tag)
+        modified.set(f"{{{ns['xsi']}}}type", 'dcterms:W3CDTF')
+        modified.text = datetime.utcnow().replace(microsecond=0).isoformat() + 'Z'
+        revision = root.find(revision_tag)
+        if revision is None:
+            revision = ET.SubElement(root, revision_tag)
+            revision.text = '1'
+        else:
+            try:
+                revision.text = str(int(revision.text or '0') + 1)
+            except Exception:
+                revision.text = '1'
+        if document_id:
+            identifier_tag = f"{{{ns['dc']}}}identifier"
+            identifier = root.find(identifier_tag)
+            if identifier is None:
+                identifier = ET.SubElement(root, identifier_tag)
+            identifier.text = document_id
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: elimina la relacion a calcChain para forzar recalc.
+def _remove_calc_chain_rel(xml_bytes):
+    try:
+        ns = {'r': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+        ET.register_namespace('', ns['r'])
+        root = ET.fromstring(xml_bytes)
+        for rel in list(root):
+            rel_type = rel.get('Type', '')
+            target = rel.get('Target', '')
+            if rel_type.endswith('/calcChain') or target.endswith('calcChain.xml'):
+                root.remove(rel)
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: fuerza recalculo completo al abrir.
+def _force_full_calc(xml_bytes):
+    try:
+        ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        ET.register_namespace('', ns['main'])
+        root = ET.fromstring(xml_bytes)
+        calc_tag = f"{{{ns['main']}}}calcPr"
+        calc_pr = root.find(calc_tag)
+        if calc_pr is None:
+            calc_pr = ET.SubElement(root, calc_tag)
+        calc_pr.set('fullCalcOnLoad', '1')
+        calc_pr.set('calcMode', 'auto')
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: desactiva actualizaciones automaticas de links/conexiones.
+def _update_workbook_pr(xml_bytes):
+    try:
+        ns = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+        ET.register_namespace('', ns['main'])
+        root = ET.fromstring(xml_bytes)
+        pr_tag = f"{{{ns['main']}}}workbookPr"
+        pr = root.find(pr_tag)
+        if pr is None:
+            pr = ET.SubElement(root, pr_tag)
+        pr.set('updateLinks', 'never')
+        pr.set('refreshAllConnections', '0')
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: actualiza/crea docProps/custom.xml con un DocumentId.
+def _update_custom_xml(xml_bytes, document_id):
+    try:
+        ns = {
+            'cp': 'http://schemas.openxmlformats.org/officeDocument/2006/custom-properties',
+            'vt': 'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes',
+        }
+        for prefix, uri in ns.items():
+            ET.register_namespace(prefix, uri)
+        root = ET.fromstring(xml_bytes)
+        prop_tag = f"{{{ns['cp']}}}property"
+        name_targets = {'documentid', 'document-id', 'docid'}
+        max_pid = 1
+        found = False
+        for prop in root.findall(prop_tag):
+            pid = prop.get('pid')
+            if pid and pid.isdigit():
+                max_pid = max(max_pid, int(pid))
+            name = (prop.get('name') or '').strip().lower()
+            if name in name_targets:
+                for child in list(prop):
+                    prop.remove(child)
+                val = ET.SubElement(prop, f"{{{ns['vt']}}}lpwstr")
+                val.text = document_id
+                found = True
+        if not found:
+            prop = ET.SubElement(root, prop_tag)
+            prop.set('fmtid', '{D5CDD505-2E9C-101B-9397-08002B2CF9AE}')
+            prop.set('pid', str(max_pid + 1))
+            prop.set('name', 'DocumentId')
+            val = ET.SubElement(prop, f"{{{ns['vt']}}}lpwstr")
+            val.text = document_id
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: crea un custom.xml minimo con DocumentId.
+def _create_custom_xml(document_id):
+    ns_cp = 'http://schemas.openxmlformats.org/officeDocument/2006/custom-properties'
+    ns_vt = 'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes'
+    ET.register_namespace('', ns_cp)
+    ET.register_namespace('vt', ns_vt)
+    root = ET.Element(f"{{{ns_cp}}}Properties")
+    prop = ET.SubElement(root, f"{{{ns_cp}}}property")
+    prop.set('fmtid', '{D5CDD505-2E9C-101B-9397-08002B2CF9AE}')
+    prop.set('pid', '2')
+    prop.set('name', 'DocumentId')
+    val = ET.SubElement(prop, f"{{{ns_vt}}}lpwstr")
+    val.text = document_id
+    return _serialize_xml(root, b'')
+
+
+# Comentario tecnico: asegura relacion de custom-properties en _rels/.rels.
+def _ensure_custom_props_relationship(xml_bytes):
+    try:
+        ns = {'r': 'http://schemas.openxmlformats.org/package/2006/relationships'}
+        ET.register_namespace('', ns['r'])
+        root = ET.fromstring(xml_bytes)
+        rel_tag = f"{{{ns['r']}}}Relationship"
+        max_id = 0
+        has_custom = False
+        for rel in root.findall(rel_tag):
+            rel_id = rel.get('Id', '')
+            if rel_id.startswith('rId') and rel_id[3:].isdigit():
+                max_id = max(max_id, int(rel_id[3:]))
+            rel_type = rel.get('Type', '')
+            target = rel.get('Target', '')
+            if rel_type.endswith('/custom-properties') or target == 'docProps/custom.xml':
+                has_custom = True
+        if not has_custom:
+            rel = ET.SubElement(root, rel_tag)
+            rel.set('Id', f'rId{max_id + 1}')
+            rel.set('Type', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties')
+            rel.set('Target', 'docProps/custom.xml')
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: asegura el content type para custom.xml.
+def _ensure_custom_props_content_type(xml_bytes):
+    try:
+        ns = {'ct': 'http://schemas.openxmlformats.org/package/2006/content-types'}
+        ET.register_namespace('', ns['ct'])
+        root = ET.fromstring(xml_bytes)
+        override_tag = f"{{{ns['ct']}}}Override"
+        for override in root.findall(override_tag):
+            if override.get('PartName') == '/docProps/custom.xml':
+                return _serialize_xml(root, xml_bytes)
+        override = ET.SubElement(root, override_tag)
+        override.set('PartName', '/docProps/custom.xml')
+        override.set('ContentType',
+                     'application/vnd.openxmlformats-officedocument.custom-properties+xml')
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: desactiva refreshOnLoad/refreshOnOpen en XMLs de conexiones.
+def _disable_refresh(xml_bytes):
+    if (b'refreshOnLoad' not in xml_bytes and b'refreshOnOpen' not in xml_bytes
+            and b'refreshOnSave' not in xml_bytes and b'backgroundRefresh' not in xml_bytes):
+        return xml_bytes
+    try:
+        root = ET.fromstring(xml_bytes)
+        changed = False
+        for elem in root.iter():
+            for attr in ('refreshOnLoad', 'refreshOnOpen', 'refreshOnSave', 'backgroundRefresh'):
+                val = elem.get(attr)
+                if val is not None and val not in ('0', 'false', 'False'):
+                    elem.set(attr, '0')
+                    changed = True
+        if not changed:
+            return xml_bytes
+        return _serialize_xml(root, xml_bytes)
+    except Exception:
+        return xml_bytes
+
+
+# Comentario tecnico: reescribe el XLSX para limpiar caches y metadatos.
+def _sanitize_xlsx_file(path):
+    temp_path = path + '.san'
+    document_id = str(uuid.uuid4()).upper()
+    custom_found = False
+    try:
+        with zipfile.ZipFile(path, 'r') as zin:
+            with zipfile.ZipFile(temp_path, 'w') as zout:
+                for item in zin.infolist():
+                    name = item.filename
+                    if name == 'xl/calcChain.xml':
+                        continue
+                    data = zin.read(name)
+                    if name == 'docProps/core.xml':
+                        data = _update_core_xml(data, document_id)
+                    elif name == 'docProps/custom.xml':
+                        data = _update_custom_xml(data, document_id)
+                        custom_found = True
+                    elif name == '_rels/.rels':
+                        data = _ensure_custom_props_relationship(data)
+                    elif name == '[Content_Types].xml':
+                        data = _ensure_custom_props_content_type(data)
+                    elif name == 'xl/_rels/workbook.xml.rels':
+                        data = _remove_calc_chain_rel(data)
+                    elif name == 'xl/workbook.xml':
+                        data = _force_full_calc(data)
+                        data = _update_workbook_pr(data)
+                    if name.endswith('.xml'):
+                        data = _disable_refresh(data)
+                    zi = zipfile.ZipInfo(filename=name, date_time=item.date_time)
+                    zi.compress_type = item.compress_type
+                    zi.comment = item.comment
+                    zi.extra = item.extra
+                    zi.create_system = item.create_system
+                    zi.create_version = item.create_version
+                    zi.extract_version = item.extract_version
+                    zi.flag_bits = item.flag_bits
+                    zi.internal_attr = item.internal_attr
+                    zi.external_attr = item.external_attr
+                    zout.writestr(zi, data)
+                if not custom_found:
+                    custom_xml = _create_custom_xml(document_id)
+                    zout.writestr('docProps/custom.xml', custom_xml)
+        os.replace(temp_path, path)
+        return True
+    except Exception:
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        return False
+
+
+# Comentario tecnico: escribe la base XLSX usando Excel para sincronizar caches.
+def _write_xlsx_with_excel(path, sheet_name, asin_col, iva_col, max_col, records):
+    global _LAST_EXCEL_LOG
+    if not sys.platform.startswith('win'):
+        return False
+    flag = os.getenv('IVASINS_EXCEL_WRITE', '1').strip().lower()
+    if flag in ('0', 'false', 'no', 'off'):
+        return False
+    log_flag = os.getenv('IVASINS_EXCEL_LOG', '1').strip().lower()
+    log_path = None
+    temp_data = None
+    temp_script = None
+    try:
+        temp_dir = os.path.join(tempfile.gettempdir(), 'IvaAsins')
+        os.makedirs(temp_dir, exist_ok=True)
+        if log_flag not in ('0', 'false', 'no', 'off'):
+            stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            log_path = os.path.join(temp_dir, f'excel_write_{stamp}.log')
+            _LAST_EXCEL_LOG = log_path
+        fd, temp_data = tempfile.mkstemp(prefix='ivaasins_', suffix='.csv', dir=temp_dir)
+        os.close(fd)
+        with open(temp_data, 'w', encoding='utf-8', newline='') as f:
+            f.write('ASIN,IVA\r\n')
+            for record in records:
+                f.write(f"{record['ASIN']},{record['IVA']}\r\n")
+
+        ps_script = r"""
+param(
+  [string]$path,
+  [string]$sheetName,
+  [int]$asinCol,
+  [int]$ivaCol,
+  [int]$maxCol,
+  [string]$dataPath,
+  [string]$logPath
+)
+$ErrorActionPreference = "Stop"
+$path = [System.IO.Path]::GetFullPath($path)
+$logPath = if ($logPath) { [System.IO.Path]::GetFullPath($logPath) } else { $null }
+$excel = $null
+$wb = $null
+function Log([string]$msg) {
+    if ($logPath) {
+        $ts = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss.fff")
+        Add-Content -Path $logPath -Value "$ts $msg"
+    }
+}
+try {
+    Log "Start path=$path sheet=$sheetName asinCol=$asinCol ivaCol=$ivaCol maxCol=$maxCol dataPath=$dataPath"
+    $excel = New-Object -ComObject Excel.Application
+    $excel.DisplayAlerts = $false
+    $excel.Visible = $false
+    $excel.AskToUpdateLinks = $false
+    $excel.EnableEvents = $false
+    $excel.AutomationSecurity = 3
+    try { $excel.Calculation = -4135 } catch { Log "Calc set failed: $($_.Exception.Message)" }
+    Log "Excel version=$($excel.Version)"
+    $wb = $excel.Workbooks.Open($path, 0, $false)
+    Log "Workbook opened"
+    try { $ws = $wb.Worksheets.Item($sheetName) } catch { $ws = $wb.ActiveSheet }
+    Log "Worksheet name=$($ws.Name)"
+    $used = $ws.UsedRange
+    $lastRow = $used.Row + $used.Rows.Count - 1
+    if ($lastRow -lt 2) { $lastRow = 1 }
+    if ($maxCol -lt 1) { $maxCol = $used.Column + $used.Columns.Count - 1 }
+    Log "UsedRange row=$($used.Row) rows=$($used.Rows.Count) col=$($used.Column) cols=$($used.Columns.Count) lastRow=$lastRow maxCol=$maxCol"
+    if ($lastRow -ge 2 -and $maxCol -ge 1) {
+        $ws.Range($ws.Cells(2, 1), $ws.Cells($lastRow, $maxCol)).ClearContents()
+        Log "Cleared range rows=2..$lastRow cols=1..$maxCol"
+    }
+    $lines = [System.IO.File]::ReadAllLines($dataPath)
+    Log "Data lines=$($lines.Length)"
+    if ($lines.Length -gt 1) {
+        $n = $lines.Length - 1
+        $asinArr = New-Object 'object[,]' $n, 1
+        $ivaArr = New-Object 'object[,]' $n, 1
+        $rowIndex = 0
+        for ($i = 1; $i -lt $lines.Length; $i++) {
+            $line = $lines[$i]
+            if ($line.Length -eq 0) { continue }
+            $parts = $line.Split(',', 2)
+            $asinArr[$rowIndex, 0] = $parts[0]
+            if ($parts.Length -gt 1) { $ivaArr[$rowIndex, 0] = $parts[1] } else { $ivaArr[$rowIndex, 0] = '' }
+            $rowIndex++
+        }
+        if ($rowIndex -gt 0) {
+            $ws.Range($ws.Cells(2, $asinCol), $ws.Cells($rowIndex + 1, $asinCol)).Value2 = $asinArr
+            $ws.Range($ws.Cells(2, $ivaCol), $ws.Cells($rowIndex + 1, $ivaCol)).Value2 = $ivaArr
+            Log "Wrote rows=2..$($rowIndex + 1) to asinCol=$asinCol ivaCol=$ivaCol"
+        } else {
+            Log "No data rows to write"
+        }
+    }
+    $wb.Save()
+    Log "Workbook saved"
+    $wb.Close($true)
+    Log "Workbook closed"
+} catch {
+    Log "ERROR: $($_.Exception.Message)"
+    throw
+} finally {
+    if ($wb -ne $null) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb) }
+    if ($excel -ne $null) { $excel.Quit(); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+    Log "COM released"
+}
+"""
+        fd, temp_script = tempfile.mkstemp(prefix='ivaasins_excel_', suffix='.ps1', dir=temp_dir)
+        os.close(fd)
+        with open(temp_script, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(ps_script.strip() + '\n')
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+             '-File', temp_script,
+             '-path', path,
+             '-sheetName', sheet_name or '',
+             '-asinCol', str(asin_col),
+             '-ivaCol', str(iva_col),
+             '-maxCol', str(max_col),
+             '-dataPath', temp_data,
+             '-logPath', (log_path or '')],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if log_path:
+            if result.stdout:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write("STDOUT:\n" + result.stdout + "\n")
+            if result.stderr:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write("STDERR:\n" + result.stderr + "\n")
+        return result.returncode == 0
+    except Exception:
+        return False
+    finally:
+        if temp_script and os.path.exists(temp_script):
+            try:
+                os.remove(temp_script)
+            except Exception:
+                pass
+        if temp_data and os.path.exists(temp_data):
+            try:
+                os.remove(temp_data)
+            except Exception:
+                pass
+
+
+# Comentario tecnico: reabre y guarda con Excel para sincronizar caches locales.
+def _excel_resave(path):
+    if not sys.platform.startswith('win'):
+        return False
+    flag = os.getenv('IVASINS_EXCEL_RESAVE', '1').strip().lower()
+    if flag in ('0', 'false', 'no', 'off'):
+        return False
+    ps_script = r'''
+$ErrorActionPreference = "Stop"
+$path = [System.IO.Path]::GetFullPath($args[0])
+$excel = $null
+$wb = $null
+try {
+    $excel = New-Object -ComObject Excel.Application
+    $excel.DisplayAlerts = $false
+    $excel.Visible = $false
+    $excel.AskToUpdateLinks = $false
+    $excel.EnableEvents = $false
+    $excel.AutomationSecurity = 3
+    $excel.Calculation = -4135
+    $wb = $excel.Workbooks.Open($path, 0, $false)
+    $wb.Save()
+    $wb.Close($true)
+} finally {
+    if ($wb -ne $null) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb) }
+    if ($excel -ne $null) { $excel.Quit(); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+}
+'''
+    try:
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+             '-Command', ps_script, path],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+# Comentario tecnico: verifica con Excel la ultima fila con datos en columna ASIN.
+def _verify_xlsx_with_excel(path, sheet_name, asin_col, expected_rows):
+    global _LAST_EXCEL_VERIFY_LOG
+    if not sys.platform.startswith('win'):
+        return None
+    flag = os.getenv('IVASINS_EXCEL_VERIFY', '1').strip().lower()
+    if flag in ('0', 'false', 'no', 'off'):
+        return None
+    log_flag = os.getenv('IVASINS_EXCEL_VERIFY_LOG', '1').strip().lower()
+    log_path = None
+    temp_script = None
+    try:
+        temp_dir = os.path.join(tempfile.gettempdir(), 'IvaAsins')
+        os.makedirs(temp_dir, exist_ok=True)
+        if log_flag not in ('0', 'false', 'no', 'off'):
+            stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            log_path = os.path.join(temp_dir, f'excel_verify_{stamp}.log')
+            _LAST_EXCEL_VERIFY_LOG = log_path
+        ps_script = r"""
+param(
+  [string]$path,
+  [string]$sheetName,
+  [int]$asinCol,
+  [string]$logPath
+)
+$ErrorActionPreference = "Stop"
+$path = [System.IO.Path]::GetFullPath($path)
+$logPath = if ($logPath) { [System.IO.Path]::GetFullPath($logPath) } else { $null }
+$excel = $null
+$wb = $null
+function Log([string]$msg) {
+    if ($logPath) {
+        $ts = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss.fff")
+        Add-Content -Path $logPath -Value "$ts $msg"
+    }
+}
+try {
+    Log "Verify path=$path sheet=$sheetName asinCol=$asinCol"
+    $excel = New-Object -ComObject Excel.Application
+    $excel.DisplayAlerts = $false
+    $excel.Visible = $false
+    $excel.AskToUpdateLinks = $false
+    $excel.EnableEvents = $false
+    $excel.AutomationSecurity = 3
+    $wb = $excel.Workbooks.Open($path, 0, $true)
+    try { $ws = $wb.Worksheets.Item($sheetName) } catch { $ws = $wb.ActiveSheet }
+    $used = $ws.UsedRange
+    $lastUsedRow = $used.Row + $used.Rows.Count - 1
+    $lastAsin = $ws.Cells($ws.Rows.Count, $asinCol).End(-4162).Row
+    Log "UsedRange row=$($used.Row) rows=$($used.Rows.Count) lastUsedRow=$lastUsedRow lastAsin=$lastAsin"
+    Write-Output $lastAsin
+    $wb.Close($false)
+} finally {
+    if ($wb -ne $null) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($wb) }
+    if ($excel -ne $null) { $excel.Quit(); [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+}
+"""
+        fd, temp_script = tempfile.mkstemp(prefix='ivaasins_verify_', suffix='.ps1', dir=temp_dir)
+        os.close(fd)
+        with open(temp_script, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(ps_script.strip() + '\n')
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+             '-File', temp_script,
+             '-path', path,
+             '-sheetName', sheet_name or '',
+             '-asinCol', str(asin_col),
+             '-logPath', (log_path or '')],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if log_path:
+            if result.stdout:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write("STDOUT:\n" + result.stdout + "\n")
+            if result.stderr:
+                with open(log_path, 'a', encoding='utf-8') as f:
+                    f.write("STDERR:\n" + result.stderr + "\n")
+        if result.returncode != 0:
+            return None
+        try:
+            return int(result.stdout.strip())
+        except Exception:
+            return None
+    except Exception:
+        return None
+    finally:
+        if temp_script and os.path.exists(temp_script):
+            try:
+                os.remove(temp_script)
+            except Exception:
+                pass
 
 
 # Comentario tecnico: genera un CSV de previsualizacion a partir de nuevos registros.
@@ -624,25 +1217,53 @@ def main():
                     line += base_delim
                 f.write(line + '\r\n')
     else:
-        # Comentario tecnico: limpia celdas antiguas y reescribe solo ASIN/IVA.
-        max_row = ws.max_row
-        max_col = ws.max_column
-        # Comentario tecnico: borra celdas de datos preservando encabezados.
-        for row_idx in range(2, max_row + 1):
-            for col in range(1, max_col + 1):
-                ws.cell(row=row_idx, column=col, value=None)
-        # Comentario tecnico: reinicia el indice de fila para escritura.
-        row_idx = 2
-        # Comentario tecnico: calcula columnas destino para ASIN e IVA.
         asin_col = header_map['asin'] + 1
         iva_col = header_map['iva'] + 1
-        # Comentario tecnico: escribe registros consolidados en la hoja.
-        for record in base_map.values():
-            ws.cell(row=row_idx, column=asin_col, value=record['ASIN'])
-            ws.cell(row=row_idx, column=iva_col, value=record['IVA'])
-            row_idx += 1
-        # Comentario tecnico: guarda el workbook actualizado en disco.
-        wb.save(base_path)
+        max_col = ws.max_column
+        excel_written = _write_xlsx_with_excel(
+            base_path,
+            sheet_name,
+            asin_col,
+            iva_col,
+            max_col,
+            base_map.values(),
+        )
+        if not excel_written:
+            # Comentario tecnico: limpia celdas antiguas y reescribe solo ASIN/IVA.
+            max_row = ws.max_row
+            # Comentario tecnico: borra celdas de datos preservando encabezados.
+            for row_idx in range(2, max_row + 1):
+                for col in range(1, max_col + 1):
+                    ws.cell(row=row_idx, column=col, value=None)
+            # Comentario tecnico: reinicia el indice de fila para escritura.
+            row_idx = 2
+            # Comentario tecnico: escribe registros consolidados en la hoja.
+            for record in base_map.values():
+                ws.cell(row=row_idx, column=asin_col, value=record['ASIN'])
+                ws.cell(row=row_idx, column=iva_col, value=record['IVA'])
+                row_idx += 1
+            try:
+                wb.active = wb.sheetnames.index(sheet_name)
+            except Exception:
+                pass
+            wb.calculation.fullCalcOnLoad = True
+            # Comentario tecnico: guarda en temporal y reemplaza para invalidar cache de Excel.
+            temp_path = base_path + '.tmp'
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            wb.save(temp_path)
+            # Comentario tecnico: limpieza conservadora de caches y conexiones.
+            _sanitize_xlsx_file(temp_path)
+            os.replace(temp_path, base_path)
+            _excel_resave(base_path)
+        expected_rows = len(base_map) + 1
+        actual_rows = _verify_xlsx_with_excel(base_path, sheet_name, asin_col, expected_rows)
+        if actual_rows is not None and actual_rows != expected_rows:
+            sys.stderr.write(
+                "WARN: Excel muestra %d filas en la columna ASIN, esperado %d. "
+                "Revisa consultas/macros. Log: %s\n"
+                % (actual_rows, expected_rows, (_LAST_EXCEL_VERIFY_LOG or 'n/a'))
+            )
 
     # Comentario tecnico: genera previsualizacion desde el primer agregado.
     _write_preview_csv(salida_path, header_fields, header_map, base_delim, trailing_delim, base_map, first_new_index)
@@ -664,7 +1285,7 @@ def main():
         'sin_cambios': str(unchanged),
         'consolidados_base': str(len(set(base_duplicates))),
         'eliminados_base': str(len(base_duplicates)),
-        'base_original': str(len(base_map) - len(added)),
+        'base_original': str(base_original_rows),
         'base_final': str(len(base_map)),
         'preview_inicio': str(first_new_index),
     }
