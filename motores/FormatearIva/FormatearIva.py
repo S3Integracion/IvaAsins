@@ -35,26 +35,43 @@ _LAST_EXCEL_VERIFY_LOG = None
 
 # Comentario tecnico: agrega ruta de dependencias locales para que openpyxl sea importable.
 def _add_vendor():
-    # Comentario tecnico: calcula el directorio absoluto del archivo actual.
-    here = os.path.dirname(os.path.abspath(__file__))
-    # Comentario tecnico: construye la ruta a la carpeta vendor junto al script.
-    vendor = os.path.join(here, 'vendor')
-    # Comentario tecnico: inserta vendor al inicio de sys.path solo si existe y no esta.
-    if os.path.isdir(vendor) and vendor not in sys.path:
-        # Comentario tecnico: prioriza dependencias locales sobre las del entorno global.
-        sys.path.insert(0, vendor)
+    # Comentario tecnico: candidatos base para ubicar la carpeta vendor.
+    bases = []
+    # Comentario tecnico: usa el directorio del script cuando no esta congelado.
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        bases.append(here)
+    except Exception:
+        pass
+    # Comentario tecnico: en PyInstaller, usa el directorio temporal de extraccion.
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        bases.append(meipass)
+    # Comentario tecnico: agrega la carpeta del ejecutable como fallback.
+    if getattr(sys, 'frozen', False):
+        bases.append(os.path.dirname(sys.executable))
+    # Comentario tecnico: busca vendor en los candidatos y lo agrega a sys.path.
+    for base in bases:
+        vendor = os.path.join(base, 'vendor')
+        if os.path.isdir(vendor) and vendor not in sys.path:
+            # Comentario tecnico: prioriza dependencias locales sobre las del entorno global.
+            sys.path.insert(0, vendor)
+            return vendor
+    # Comentario tecnico: retorna None si no se encontro vendor.
+    return None
 
 
 # Comentario tecnico: encapsula la carga de openpyxl desde vendor o entorno.
 def _load_openpyxl():
     # Comentario tecnico: asegura que vendor este en sys.path antes de importar.
-    _add_vendor()
+    vendor_path = _add_vendor()
     try:
         # Comentario tecnico: import dinamico para evitar dependencia dura si no se usa XLSX.
         import openpyxl  # type: ignore
     except Exception as exc:
         # Comentario tecnico: convierte fallas de import en error controlado del motor.
-        raise RuntimeError('No se pudo cargar openpyxl desde la carpeta vendor.') from exc
+        detail = f" (vendor={vendor_path})" if vendor_path else " (vendor no encontrado)"
+        raise RuntimeError('No se pudo cargar openpyxl desde la carpeta vendor.' + detail + f" Detalle: {exc!r}") from exc
     # Comentario tecnico: retorna el modulo para uso por referencia.
     return openpyxl
 
