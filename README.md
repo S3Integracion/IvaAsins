@@ -1,17 +1,16 @@
 ﻿# Iva Asins
 
 Aplicacion para actualizar una base de IVA por ASIN usando un reporte Amazon.
-Incluye interfaz grafica (Java) y un motor de procesamiento (FormatearIva.exe o FormatearIva.py).
+Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias externas).
 
 ## Componentes
 - Interfaz: `src/interfaz/Principal.java`
 - Lanzador de motor: `src/control/MotorIvaRunner.java`
-- Motor: `motores/FormatearIva/FormatearIva.py` (o `FormatearIva.exe`)
+- Motor Java: `src/control/IvaEngine.java`
+- CLI tecnica: `src/control/FormatearIvaMain.java`
 
 ## Dependencias
-- Java 8+ para la interfaz grafica.
-- Python 3 si se usa `FormatearIva.py` (openpyxl se carga desde `motores/FormatearIva/vendor`).
-- Si existe `FormatearIva.exe`, se usa ese ejecutable y no se requiere Python.
+- Java 11+ para interfaz y motor.
 
 ## Flujo general
 1. El usuario selecciona una base IVA (.csv o .xlsx) y un reporte Amazon (.txt).
@@ -62,10 +61,10 @@ Incluye interfaz grafica (Java) y un motor de procesamiento (FormatearIva.exe o 
 - Menu `File -> Manual` abre `ManualUsuario.md`.
 
 ## Uso por linea de comandos (motor)
-Ejemplo con Python:
+Ejemplo Java:
 
 ```bash
-python motores/FormatearIva/FormatearIva.py \
+java -cp build/java/IvaAsins.jar control.FormatearIvaMain \
   --base "C:\\ruta\\BaseIVA.csv" \
   --reporte "C:\\ruta\\ReporteAmazon.txt" \
   --salida "C:\\ruta\\Preview.csv" \
@@ -83,10 +82,7 @@ Opciones soportadas:
 - `--list-sheets` (lista hojas de un XLSX)
 
 ## Configuracion
-- `IVASINS_MOTORES` o `-Divasins.motores`: ruta a la carpeta `motores`.
-- `IVASINS_PYTHON` o `-Divasins.python`: comando de Python a usar si no hay `.exe`.
-Si no se configura, el lanzador busca la carpeta `motores` desde el directorio de trabajo,
-desde la ubicacion del ejecutable y en subdirectorios cercanos.
+- No se requiere configuracion de motores externos.
 
 ## Notas importantes
 - La base se actualiza en el mismo archivo. Se recomienda hacer copia antes de procesar.
