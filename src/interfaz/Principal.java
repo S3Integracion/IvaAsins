@@ -353,11 +353,15 @@ public class Principal extends JFrame {
         int tabs = countChar(line, '\t');
         int semis = countChar(line, ';');
         int commas = countChar(line, ',');
-        if (tabs >= semis && tabs >= commas) {
+        int pipes = countChar(line, '|');
+        if (tabs >= semis && tabs >= commas && tabs >= pipes) {
             return "\t";
         }
-        if (semis >= commas) {
+        if (semis >= commas && semis >= pipes) {
             return ";";
+        }
+        if (pipes >= commas) {
+            return "|";
         }
         return ",";
     }

@@ -2,15 +2,12 @@ Compilar IvaAsins (Windows / PowerShell)
 
 Requisitos:
 - JDK con jpackage (JDK 14+).
-- Python 3 y pip.
-- PyInstaller (se instala en el paso del motor).
 - UI Designer: debe existir out\production\IvaAsins\com\intellij\uiDesigner\core.
   Si no existe, abre el proyecto en IntelliJ y ejecuta "Build Project".
   Alternativa: usar forms_rt.jar en el classpath (ver nota al final).
 
 Estructura final esperada para instalador:
 dist\IvaAsins\IvaAsins.exe
-dist\IvaAsins\motores\FormatearIva\FormatearIva.exe
 dist\IvaAsins\ManualUsuario.md
 dist\IvaAsins\IvaAsins.ico
 
@@ -37,23 +34,13 @@ Paso 3) Convertir JAR a EXE (app-image)
 jpackage --type app-image --name IvaAsins --dest "$Dist" --input "$Build" --main-jar IvaAsins.jar --icon "$Root\IvaAsins.ico" --java-options "-Dfile.encoding=UTF-8"
 ```
 
-Paso 4) Compilar motor Python a EXE
+Paso 4) Ensamblar carpeta final para instalador
 ```powershell
-Push-Location "$Root\motores\FormatearIva"
-python -m pip install --upgrade pyinstaller
-pyinstaller --onefile --name FormatearIva --add-data "vendor;vendor" --hidden-import __future__ FormatearIva.py
-Pop-Location
-```
-
-Paso 5) Ensamblar carpeta final para instalador
-```powershell
-New-Item -ItemType Directory -Force -Path "$AppImage\motores\FormatearIva" | Out-Null
-Copy-Item "$Root\motores\FormatearIva\dist\FormatearIva.exe" "$AppImage\motores\FormatearIva\FormatearIva.exe" -Force
 Copy-Item "$Root\ManualUsuario.md" "$AppImage\ManualUsuario.md" -Force
 Copy-Item "$Root\IvaAsins.ico" "$AppImage\IvaAsins.ico" -Force
 ```
 
-Paso 6) Verificar ejecucion
+Paso 5) Verificar ejecucion
 ```powershell
 & "$AppImage\IvaAsins.exe"
 ```
