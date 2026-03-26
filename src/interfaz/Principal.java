@@ -116,11 +116,21 @@ public class Principal extends JFrame {
         applyFriendlyPalette();
         applyWindowIcon();
 
-        btnBuscarBase.addActionListener(e -> onSelectBase());
-        btnBuscarReporte.addActionListener(e -> onSelectReporte());
-        btnBuscarSalida.addActionListener(e -> onSelectSalida());
-        btnPreview.addActionListener(e -> onProcess());
-        btnClear.addActionListener(e -> onClear());
+        if (btnBuscarBase != null) {
+            btnBuscarBase.addActionListener(e -> onSelectBase());
+        }
+        if (btnBuscarReporte != null) {
+            btnBuscarReporte.addActionListener(e -> onSelectReporte());
+        }
+        if (btnBuscarSalida != null) {
+            btnBuscarSalida.addActionListener(e -> onSelectSalida());
+        }
+        if (btnPreview != null) {
+            btnPreview.addActionListener(e -> onProcess());
+        }
+        if (btnClear != null) {
+            btnClear.addActionListener(e -> onClear());
+        }
 
         installFileDrop(rootPanel);
         installFileDrop(panelTop);
@@ -128,7 +138,9 @@ public class Principal extends JFrame {
         installFileDrop(tablePreview);
         installFileDrop(txtBase);
         installFileDrop(txtReporte);
-        installFileDrop(txtSalida);
+        if (txtSalida != null) {
+            installFileDrop(txtSalida);
+        }
     }
 
     private void onSelectBase() {
@@ -183,7 +195,9 @@ public class Principal extends JFrame {
     private void onClear() {
         txtBase.setText("");
         txtReporte.setText("");
-        txtSalida.setText("");
+        if (txtSalida != null) {
+            txtSalida.setText("");
+        }
         tablePreview.setModel(new DefaultTableModel());
         lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
         tempPreview = null;
@@ -247,7 +261,7 @@ public class Principal extends JFrame {
     }
 
     private File resolveOutputRoot(File base) {
-        String value = txtSalida.getText().trim();
+        String value = txtSalida == null ? "" : txtSalida.getText().trim();
         File selected = value.isEmpty() ? base.getParentFile() : new File(value);
         if (selected == null) {
             showError("No se pudo resolver el directorio base para guardar resultados.");
