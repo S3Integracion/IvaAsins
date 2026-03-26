@@ -59,9 +59,11 @@ public class FormatearIvaMain {
         request.reporteTxt = new File(reporte).getAbsoluteFile();
         request.previewCsv = new File(salida).getAbsoluteFile();
         request.resumenFile = new File(resumen).getAbsoluteFile();
-        String reportOut = options.get("--reporte-out");
-        request.reporteOutFile = reportOut == null || reportOut.trim().isEmpty() ? null
-                : new File(reportOut).getAbsoluteFile();
+        String outputRoot = options.get("--output-root");
+        request.outputRootDirectory = outputRoot == null || outputRoot.trim().isEmpty() ? null
+                : new File(outputRoot).getAbsoluteFile();
+        // Compatibilidad: se conserva la opcion aunque el motor ahora genera automaticamente el log versionado.
+        request.reporteOutFile = null;
         request.sheetName = options.get("--sheet");
 
         engine.process(request);
