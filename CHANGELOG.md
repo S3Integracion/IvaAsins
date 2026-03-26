@@ -4,7 +4,9 @@
 
 ### Actualizacion mayor: salidas versionadas sin sobrescribir base
 - Se cambia el flujo para no modificar la base original y generar siempre un nuevo CSV:
-  - `Base de Datos IVA Amazon MM-dd-yyyy.csv`.
+  - `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`.
+- Los artefactos generados usan timestamp local con formato `HHmm MM-dd-yyyy`.
+- La copia del reporte se guarda como: `Reporte de Amazon HHmm MM-dd-yyyy.txt`.
 - Se crea estructura de guardado automatica por fecha:
   - `Bases de datos de IVAS/<anio>/<Mes>/`.
 - Se genera reporte de proceso en formato `.log` y se copia el reporte Amazon `.txt` en la misma carpeta de salida.

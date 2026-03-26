@@ -49,7 +49,7 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 
 ## Salidas
 - Nueva base CSV (no se sobreescribe la base original) con nombre:
-  - `Base de Datos IVA Amazon MM-dd-yyyy.csv`
+  - `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`
 - Log del proceso con extension `.log` en la misma carpeta de salida versionada.
 - Copia del reporte Amazon `.txt` en la misma carpeta de salida versionada.
 - Previsualizacion CSV (ruta definida por la interfaz o CLI).
@@ -58,7 +58,7 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 Estructura de guardado:
 - `Bases de datos de IVAS/<anio>/<Mes>/`
 - Ejemplo:
-  - `Bases de datos de IVAS/2026/Febrero/Base de Datos IVA Amazon 02-14-2026.csv`
+  - `Bases de datos de IVAS/2026/Febrero/Base de Datos IVA Amazon 1842 03-25-2026.csv`
 
 ## Interfaz grafica
 - Ejecuta `control.Main`.

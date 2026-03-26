@@ -20,9 +20,9 @@ Procesa tu base de IVA usando un reporte Amazon sin sobrescribir el archivo orig
 ## Donde quedan los resultados
 - Se crea una carpeta `Bases de datos de IVAS` en la ruta raiz seleccionada (o en la carpeta de la base si no defines una).
 - Dentro se generan subcarpetas por anio y mes (segun fecha del sistema).
-- Se crea un CSV nuevo: `Base de Datos IVA Amazon MM-dd-yyyy.csv`.
+- Se crea un CSV nuevo: `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`.
 - Se crea un log del proceso con extension `.log`.
-- Se guarda tambien una copia del reporte Amazon `.txt` usado en la corrida.
+- Se guarda tambien una copia del reporte Amazon con nombre: `Reporte de Amazon HHmm MM-dd-yyyy.txt`.
 - La tabla muestra una vista previa de los registros agregados. Si no hubo nuevos, puede mostrar toda la base.
 
 ## Buenas practicas

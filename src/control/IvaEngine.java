@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Month;
 import java.time.format.DateTimeFormatter;
@@ -143,8 +142,7 @@ public class IvaEngine {
         ReportStats reportStats = loadReport(request.reporteTxt);
         ApplyStats applyStats = applyReportToBase(baseData, reportStats.reportMap);
 
-        OutputLayout outputLayout = resolveOutputLayout(request.baseFile.toPath(), request.reporteTxt,
-                request.outputRootDirectory);
+        OutputLayout outputLayout = resolveOutputLayout(request.baseFile.toPath(), request.outputRootDirectory);
         writeBaseCsv(outputLayout.generatedCsv, baseData);
         Files.copy(request.reporteTxt.toPath(), outputLayout.copiedReportTxt, StandardCopyOption.REPLACE_EXISTING);
 
@@ -686,9 +684,9 @@ public class IvaEngine {
         Files.write(reportPath, String.join("\n", lines).getBytes(StandardCharsets.UTF_8));
     }
 
-    private OutputLayout resolveOutputLayout(Path basePath, File reporteTxt, File outputRootDirectory)
-            throws IOException {
-        LocalDate today = LocalDate.now();
+    private OutputLayout resolveOutputLayout(Path basePath, File outputRootDirectory) throws IOException {
+        LocalDateTime now = LocalDateTime.now();
+        String timestamp = now.format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
         Path targetRootBase = outputRootDirectory == null
                 ? basePath.getParent()
                 : outputRootDirectory.toPath();
@@ -698,15 +696,15 @@ public class IvaEngine {
 
         OutputLayout layout = new OutputLayout();
         layout.rootFolder = targetRootBase.resolve("Bases de datos de IVAS");
-        layout.yearFolder = layout.rootFolder.resolve(Integer.toString(today.getYear()));
-        layout.monthFolder = layout.yearFolder.resolve(monthNameEs(today.getMonth()));
+        layout.yearFolder = layout.rootFolder.resolve(Integer.toString(now.getYear()));
+        layout.monthFolder = layout.yearFolder.resolve(monthNameEs(now.getMonth()));
         Files.createDirectories(layout.monthFolder);
 
-        String dateFile = today.format(DateTimeFormatter.ofPattern("MM-dd-yyyy"));
-        layout.generatedCsv = ensureUnique(layout.monthFolder, "Base de Datos IVA Amazon " + dateFile, ".csv");
+        layout.generatedCsv = ensureUnique(layout.monthFolder,
+                "Base de Datos IVA Amazon " + timestamp,
+                ".csv");
         layout.generatedLog = replaceExtension(layout.generatedCsv, ".log");
-        String reportFileName = reporteTxt == null ? "ReporteAmazon.txt" : reporteTxt.getName();
-        layout.copiedReportTxt = ensureUnique(layout.monthFolder, stripExtension(reportFileName), ".txt");
+        layout.copiedReportTxt = ensureUnique(layout.monthFolder, "Reporte de Amazon " + timestamp, ".txt");
         return layout;
     }
 
@@ -727,10 +725,6 @@ public class IvaEngine {
         return path.getParent().resolve(clean + extension);
     }
 
-    private String stripExtension(String name) {
-        int idx = name.lastIndexOf('.');
-        return idx >= 0 ? name.substring(0, idx) : name;
-    }
 
     private String monthNameEs(Month month) {
         switch (month) {

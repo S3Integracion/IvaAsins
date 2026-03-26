@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -215,8 +217,9 @@ public class Principal extends JFrame {
                 if (!tempDir.exists()) {
                     tempDir.mkdirs();
                 }
-                tempPreview = new File(tempDir, "IvaAsins.preview.csv");
-                tempResumen = new File(tempDir, "IvaAsins.resumen");
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
+                tempPreview = new File(tempDir, "IvaAsins.preview " + timestamp + ".csv");
+                tempResumen = new File(tempDir, "IvaAsins.resumen " + timestamp + ".resumen");
                 return runner.ejecutar(base, reporte, outputRoot, tempPreview, tempResumen, sheetName);
             }
 
