@@ -15,7 +15,7 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 ## Flujo general
 1. El usuario selecciona una base IVA (.csv o .xlsx) y un reporte Amazon (.txt).
 2. La interfaz ejecuta el motor con los parametros requeridos.
-3. El motor actualiza la base, genera una previsualizacion y un resumen.
+3. El motor consolida datos, genera una nueva base CSV versionada, una previsualizacion y un resumen.
 4. La interfaz muestra la vista previa y un resumen en pantalla.
 
 ## Entradas
@@ -48,14 +48,22 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
   - XLSX: se vacian las filas de datos y se escriben solo las columnas ASIN e IVA.
 
 ## Salidas
-- Base actualizada en el mismo archivo.
-- `Reporte_Iva_Process.txt` en la carpeta de la base (detalle del proceso).
+- Nueva base CSV (no se sobreescribe la base original) con nombre:
+  - `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`
+- Log del proceso con extension `.log` en la misma carpeta de salida versionada.
+- Copia del reporte Amazon `.txt` en la misma carpeta de salida versionada.
 - Previsualizacion CSV (ruta definida por la interfaz o CLI).
-- Archivo resumen `.resumen` (properties) con contadores del proceso.
+- Archivo resumen `.resumen` (properties) con contadores y rutas generadas.
+
+Estructura de guardado:
+- `Bases de datos de IVAS/<anio>/<Mes>/`
+- Ejemplo:
+  - `Bases de datos de IVAS/2026/Febrero/Base de Datos IVA Amazon 1842 03-25-2026.csv`
 
 ## Interfaz grafica
 - Ejecuta `control.Main`.
 - Permite arrastrar archivos o usar "Buscar".
+- Permite definir carpeta raiz opcional para guardar resultados versionados.
 - Si la base es XLSX y no existe la hoja por defecto, se solicita elegir una.
 - Muestra vista previa (hasta 100 filas) y un resumen del proceso.
 - Menu `File -> Manual` abre `ManualUsuario.md`.
@@ -67,9 +75,9 @@ Ejemplo Java:
 java -cp build/java/IvaAsins.jar control.FormatearIvaMain \
   --base "C:\\ruta\\BaseIVA.csv" \
   --reporte "C:\\ruta\\ReporteAmazon.txt" \
+  --output-root "C:\\ruta\\DestinoRaiz" \
   --salida "C:\\ruta\\Preview.csv" \
-  --resumen "C:\\ruta\\Preview.resumen" \
-  --reporte-out "C:\\ruta\\Reporte_Iva_Process.txt"
+  --resumen "C:\\ruta\\Preview.resumen"
 ```
 
 Opciones soportadas:
@@ -77,7 +85,7 @@ Opciones soportadas:
 - `--reporte` (requerido)
 - `--salida` (requerido)
 - `--resumen` (opcional, por defecto `<salida>.resumen`)
-- `--reporte-out` (opcional)
+- `--output-root` (opcional, carpeta raiz; si se omite usa la carpeta de la base)
 - `--sheet` (opcional, nombre de hoja en XLSX)
 - `--list-sheets` (lista hojas de un XLSX)
 
@@ -85,5 +93,6 @@ Opciones soportadas:
 - No se requiere configuracion de motores externos.
 
 ## Notas importantes
-- La base se actualiza en el mismo archivo. Se recomienda hacer copia antes de procesar.
-- En XLSX solo se rellenan ASIN e IVA; otras columnas pueden quedar vacias.
+- La base original nunca se sobreescribe; siempre se genera un CSV nuevo.
+- Se conserva soporte de entrada XLSX y CSV.
+- El log ahora se guarda como `.log` junto al CSV generado.

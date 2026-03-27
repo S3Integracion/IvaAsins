@@ -29,11 +29,14 @@ public class MotorIvaRunner {
         public File preview;
         public File resumen;
         public File reporte;
+        public File baseGeneradaCsv;
+        public File reporteAmazonCopiado;
+        public File carpetaSalida;
         public String stdout;
     }
 
-    public Resultado ejecutar(File baseFile, File reporteTxt, File previewCsv, File resumenFile, File reporteOutFile,
-            String sheetName)
+    public Resultado ejecutar(File baseFile, File reporteTxt, File outputRootDirectory, File previewCsv,
+            File resumenFile, String sheetName)
             throws IOException {
         IvaEngine engine = new IvaEngine();
         IvaEngine.ProcessRequest request = new IvaEngine.ProcessRequest();
@@ -41,14 +44,14 @@ public class MotorIvaRunner {
         request.reporteTxt = reporteTxt;
         request.previewCsv = previewCsv;
         request.resumenFile = resumenFile;
-        request.reporteOutFile = reporteOutFile;
+        request.reporteOutFile = null;
+        request.outputRootDirectory = outputRootDirectory;
         request.sheetName = sheetName;
 
         Resultado resultado = new Resultado();
         resultado.stdout = "OK";
         resultado.preview = previewCsv;
         resultado.resumen = resumenFile;
-        resultado.reporte = reporteOutFile;
 
         engine.process(request);
 
@@ -78,6 +81,10 @@ public class MotorIvaRunner {
         resultado.baseOriginal = parseInt(props.getProperty("base_original", "0"));
         resultado.baseFinal = parseInt(props.getProperty("base_final", "0"));
         resultado.previewInicio = parseInt(props.getProperty("preview_inicio", "0"));
+        resultado.baseGeneradaCsv = toFileOrNull(props.getProperty("output_csv"));
+        resultado.reporte = toFileOrNull(props.getProperty("output_log"));
+        resultado.reporteAmazonCopiado = toFileOrNull(props.getProperty("output_reporte_amazon"));
+        resultado.carpetaSalida = toFileOrNull(props.getProperty("output_month_folder"));
         resultado.mensaje = "OK";
         return resultado;
     }
@@ -94,5 +101,12 @@ public class MotorIvaRunner {
         IvaEngine engine = new IvaEngine();
         List<String> sheets = engine.listSheets(baseXlsx);
         return sheets == null ? new ArrayList<>() : sheets;
+    }
+
+    private File toFileOrNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return new File(value.trim());
     }
 }

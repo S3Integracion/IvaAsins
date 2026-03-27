@@ -6,6 +6,8 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Cursor;
 import java.awt.Image;
@@ -23,12 +25,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.regex.Pattern;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenu;
@@ -45,8 +50,6 @@ import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
 import javax.swing.table.DefaultTableModel;
 
-import com.intellij.uiDesigner.core.GridConstraints;
-import com.intellij.uiDesigner.core.GridLayoutManager;
 import control.MotorIvaRunner;
 
 public class Principal extends JFrame {
@@ -61,12 +64,14 @@ public class Principal extends JFrame {
     private JScrollPane scrollPane;
     private JTextField txtBase;
     private JTextField txtReporte;
+    private JTextField txtSalida;
     private JTable tablePreview;
     private JLabel lblStatus;
     private JButton btnPreview;
     private JButton btnClear;
     private JButton btnBuscarBase;
     private JButton btnBuscarReporte;
+    private JButton btnBuscarSalida;
     private JButton btnHelp;
     private JMenuBar menuBar;
     private JMenu mnFile;
@@ -113,10 +118,21 @@ public class Principal extends JFrame {
         applyFriendlyPalette();
         applyWindowIcon();
 
-        btnBuscarBase.addActionListener(e -> onSelectBase());
-        btnBuscarReporte.addActionListener(e -> onSelectReporte());
-        btnPreview.addActionListener(e -> onProcess());
-        btnClear.addActionListener(e -> onClear());
+        if (btnBuscarBase != null) {
+            btnBuscarBase.addActionListener(e -> onSelectBase());
+        }
+        if (btnBuscarReporte != null) {
+            btnBuscarReporte.addActionListener(e -> onSelectReporte());
+        }
+        if (btnBuscarSalida != null) {
+            btnBuscarSalida.addActionListener(e -> onSelectSalida());
+        }
+        if (btnPreview != null) {
+            btnPreview.addActionListener(e -> onProcess());
+        }
+        if (btnClear != null) {
+            btnClear.addActionListener(e -> onClear());
+        }
 
         installFileDrop(rootPanel);
         installFileDrop(panelTop);
@@ -124,6 +140,9 @@ public class Principal extends JFrame {
         installFileDrop(tablePreview);
         installFileDrop(txtBase);
         installFileDrop(txtReporte);
+        if (txtSalida != null) {
+            installFileDrop(txtSalida);
+        }
     }
 
     private void onSelectBase() {
@@ -137,6 +156,13 @@ public class Principal extends JFrame {
         File file = chooseOpenFile("Selecciona el reporte .txt", new String[] { "txt" });
         if (file != null) {
             txtReporte.setText(file.getAbsolutePath());
+        }
+    }
+
+    private void onSelectSalida() {
+        File selected = chooseDirectory("Selecciona carpeta raíz para resultados");
+        if (selected != null) {
+            txtSalida.setText(selected.getAbsolutePath());
         }
     }
 
@@ -161,19 +187,26 @@ public class Principal extends JFrame {
         if (isXlsx(base) && sheetName == null) {
             return;
         }
-        runMotor(base, reporte, sheetName);
+        File outputRoot = resolveOutputRoot(base);
+        if (outputRoot == null) {
+            return;
+        }
+        runMotor(base, reporte, outputRoot, sheetName);
     }
 
     private void onClear() {
         txtBase.setText("");
         txtReporte.setText("");
+        if (txtSalida != null) {
+            txtSalida.setText("");
+        }
         tablePreview.setModel(new DefaultTableModel());
         lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
         tempPreview = null;
         tempResumen = null;
     }
 
-    private void runMotor(File base, File reporte, String sheetName) {
+    private void runMotor(File base, File reporte, File outputRoot, String sheetName) {
         setButtonsEnabled(false);
         lblStatus.setText("Procesando...");
 
@@ -184,10 +217,10 @@ public class Principal extends JFrame {
                 if (!tempDir.exists()) {
                     tempDir.mkdirs();
                 }
-                tempPreview = new File(tempDir, "IvaAsins.preview.csv");
-                tempResumen = new File(tempDir, "IvaAsins.resumen");
-                File reporteOut = new File(base.getParentFile(), "Reporte_Iva_Process.txt");
-                return runner.ejecutar(base, reporte, tempPreview, tempResumen, reporteOut, sheetName);
+                String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
+                tempPreview = new File(tempDir, "IvaAsins.preview " + timestamp + ".csv");
+                tempResumen = new File(tempDir, "IvaAsins.resumen " + timestamp + ".resumen");
+                return runner.ejecutar(base, reporte, outputRoot, tempPreview, tempResumen, sheetName);
             }
 
             @Override
@@ -201,9 +234,9 @@ public class Principal extends JFrame {
                         return;
                     }
                     loadPreview(tempPreview, 100);
-                    lblStatus.setText("Base actualizada. Agregados: " + resultado.agregados
+                    lblStatus.setText("CSV generado. Agregados: " + resultado.agregados
                             + " | Modificados: " + resultado.modificados
-                            + " | Reporte: Reporte_Iva_Process.txt");
+                            + " | Carpeta: " + (resultado.carpetaSalida == null ? "" : resultado.carpetaSalida));
                     showSummaryPopup(resultado);
                 } catch (Exception ex) {
                     showError(ex.getMessage());
@@ -215,6 +248,37 @@ public class Principal extends JFrame {
     }
     private File chooseOpenFile(String title, String[] extensions) {
         return chooseFile(title, extensions, false, null);
+    }
+
+    private File chooseDirectory(String title) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setCurrentDirectory(new File(System.getProperty("user.home")));
+        int option = chooser.showOpenDialog(this);
+        if (option != JFileChooser.APPROVE_OPTION) {
+            return null;
+        }
+        return chooser.getSelectedFile();
+    }
+
+    private File resolveOutputRoot(File base) {
+        String value = txtSalida == null ? "" : txtSalida.getText().trim();
+        File selected = value.isEmpty() ? base.getParentFile() : new File(value);
+        if (selected == null) {
+            showError("No se pudo resolver el directorio base para guardar resultados.");
+            return null;
+        }
+        if (!selected.exists() && !selected.mkdirs()) {
+            showError("No se pudo crear el directorio de salida: " + selected.getAbsolutePath());
+            return null;
+        }
+        if (!selected.isDirectory()) {
+            showError("La ruta de salida no es un directorio: " + selected.getAbsolutePath());
+            return null;
+        }
+        return selected;
     }
 
     private File chooseFile(String title, String[] extensions, boolean save, String defaultName) {
@@ -424,10 +488,12 @@ public class Principal extends JFrame {
 
         styleTextField(txtBase, cardBg, border);
         styleTextField(txtReporte, cardBg, border);
+        styleTextField(txtSalida, cardBg, border);
         stylePrimaryButton(btnPreview, accent, Color.WHITE);
         styleSecondaryButton(btnClear, accentSoft, textPrimary, border);
         styleSecondaryButton(btnBuscarBase, accentSoft, textPrimary, border);
         styleSecondaryButton(btnBuscarReporte, accentSoft, textPrimary, border);
+        styleSecondaryButton(btnBuscarSalida, accentSoft, textPrimary, border);
         styleHelpButton(btnHelp, accent, Color.WHITE);
 
         tablePreview.setRowHeight(22);
@@ -610,7 +676,14 @@ public class Principal extends JFrame {
         lines.append(String.format("%-28s %8d%n", "Total base antes", baseOriginal));
         lines.append(String.format("%-28s %8d%n", "Total base despues", baseFinal));
         lines.append("\n");
-        lines.append("Se genero Reporte_Iva_Process.txt junto a la base.");
+        lines.append("CSV generado: ")
+                .append(resultado.baseGeneradaCsv == null ? "" : resultado.baseGeneradaCsv.getAbsolutePath())
+                .append("\n");
+        lines.append("Log generado: ")
+                .append(resultado.reporte == null ? "" : resultado.reporte.getAbsolutePath())
+                .append("\n");
+        lines.append("Reporte Amazon copiado: ")
+                .append(resultado.reporteAmazonCopiado == null ? "" : resultado.reporteAmazonCopiado.getAbsolutePath());
 
         String html = "<html><pre>" + lines.toString();
         JOptionPane.showMessageDialog(this, html, "Resumen", JOptionPane.INFORMATION_MESSAGE);
@@ -728,46 +801,95 @@ public class Principal extends JFrame {
         panelTop.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
         panelFields = new JPanel();
-        panelFields.setLayout(new GridLayoutManager(2, 3, new Insets(5, 5, 5, 5), -1, -1));
+        panelFields.setLayout(new GridBagLayout());
         panelTop.add(panelFields, BorderLayout.CENTER);
 
         JLabel lblBase = new JLabel();
         lblBase.setText("Base IVA (.csv o .xlsx)");
-        panelFields.add(lblBase, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcLblBase = new GridBagConstraints();
+        gbcLblBase.gridx = 0;
+        gbcLblBase.gridy = 0;
+        gbcLblBase.anchor = GridBagConstraints.WEST;
+        gbcLblBase.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblBase, gbcLblBase);
 
         txtBase = new JTextField();
         txtBase.setColumns(50);
-        panelFields.add(txtBase, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK
-                        | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null));
+        GridBagConstraints gbcTxtBase = new GridBagConstraints();
+        gbcTxtBase.gridx = 1;
+        gbcTxtBase.gridy = 0;
+        gbcTxtBase.weightx = 1.0;
+        gbcTxtBase.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtBase.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtBase, gbcTxtBase);
 
         btnBuscarBase = new JButton();
         btnBuscarBase.setText("Buscar");
         btnBuscarBase.setPreferredSize(new Dimension(90, 28));
-        panelFields.add(btnBuscarBase, new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_CENTER,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcBtnBase = new GridBagConstraints();
+        gbcBtnBase.gridx = 2;
+        gbcBtnBase.gridy = 0;
+        gbcBtnBase.anchor = GridBagConstraints.EAST;
+        gbcBtnBase.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarBase, gbcBtnBase);
 
         JLabel lblReporte = new JLabel();
         lblReporte.setText("Reporte Amazon (.txt)");
-        panelFields.add(lblReporte, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcLblReporte = new GridBagConstraints();
+        gbcLblReporte.gridx = 0;
+        gbcLblReporte.gridy = 1;
+        gbcLblReporte.anchor = GridBagConstraints.WEST;
+        gbcLblReporte.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblReporte, gbcLblReporte);
 
         txtReporte = new JTextField();
         txtReporte.setColumns(50);
-        panelFields.add(txtReporte, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK
-                        | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null));
+        GridBagConstraints gbcTxtReporte = new GridBagConstraints();
+        gbcTxtReporte.gridx = 1;
+        gbcTxtReporte.gridy = 1;
+        gbcTxtReporte.weightx = 1.0;
+        gbcTxtReporte.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtReporte.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtReporte, gbcTxtReporte);
 
         btnBuscarReporte = new JButton();
         btnBuscarReporte.setText("Buscar");
         btnBuscarReporte.setPreferredSize(new Dimension(90, 28));
-        panelFields.add(btnBuscarReporte, new GridConstraints(1, 2, 1, 1, GridConstraints.ANCHOR_CENTER,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcBtnReporte = new GridBagConstraints();
+        gbcBtnReporte.gridx = 2;
+        gbcBtnReporte.gridy = 1;
+        gbcBtnReporte.anchor = GridBagConstraints.EAST;
+        gbcBtnReporte.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarReporte, gbcBtnReporte);
+
+        JLabel lblSalida = new JLabel();
+        lblSalida.setText("Carpeta raiz de guardado (opcional)");
+        GridBagConstraints gbcLblSalida = new GridBagConstraints();
+        gbcLblSalida.gridx = 0;
+        gbcLblSalida.gridy = 2;
+        gbcLblSalida.anchor = GridBagConstraints.WEST;
+        gbcLblSalida.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblSalida, gbcLblSalida);
+
+        txtSalida = new JTextField();
+        txtSalida.setColumns(50);
+        GridBagConstraints gbcTxtSalida = new GridBagConstraints();
+        gbcTxtSalida.gridx = 1;
+        gbcTxtSalida.gridy = 2;
+        gbcTxtSalida.weightx = 1.0;
+        gbcTxtSalida.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtSalida.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtSalida, gbcTxtSalida);
+
+        btnBuscarSalida = new JButton();
+        btnBuscarSalida.setText("Buscar");
+        btnBuscarSalida.setPreferredSize(new Dimension(90, 28));
+        GridBagConstraints gbcBtnSalida = new GridBagConstraints();
+        gbcBtnSalida.gridx = 2;
+        gbcBtnSalida.gridy = 2;
+        gbcBtnSalida.anchor = GridBagConstraints.EAST;
+        gbcBtnSalida.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarSalida, gbcBtnSalida);
 
         panelButtons = new JPanel();
         panelButtons.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));

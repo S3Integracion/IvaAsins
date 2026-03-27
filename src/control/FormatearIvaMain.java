@@ -7,19 +7,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * CLI compatible con el motor historico para soporte tecnico.
+ * Servicio CLI compatible con el motor historico para soporte tecnico.
+ * El punto de entrada oficial del programa es {@link Main}.
  */
 public class FormatearIvaMain {
 
-    public static void main(String[] args) {
-        try {
-            int exit = run(args);
-            System.exit(exit);
-        } catch (Exception ex) {
-            System.err.println("ERROR: " + ex.getMessage());
-            System.exit(1);
-        }
-    }
 
     public static int run(String[] args) throws IOException {
         Map<String, String> options = parseOptions(args);
@@ -59,9 +51,11 @@ public class FormatearIvaMain {
         request.reporteTxt = new File(reporte).getAbsoluteFile();
         request.previewCsv = new File(salida).getAbsoluteFile();
         request.resumenFile = new File(resumen).getAbsoluteFile();
-        String reportOut = options.get("--reporte-out");
-        request.reporteOutFile = reportOut == null || reportOut.trim().isEmpty() ? null
-                : new File(reportOut).getAbsoluteFile();
+        String outputRoot = options.get("--output-root");
+        request.outputRootDirectory = outputRoot == null || outputRoot.trim().isEmpty() ? null
+                : new File(outputRoot).getAbsoluteFile();
+        // Compatibilidad: se conserva la opcion aunque el motor ahora genera automaticamente el log versionado.
+        request.reporteOutFile = null;
         request.sheetName = options.get("--sheet");
 
         engine.process(request);
