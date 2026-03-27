@@ -280,12 +280,13 @@ public class IvaEngine {
         }
         headerLine = stripBom(headerLine);
 
-        data.delimiter = detectDelimiter(headerLine);
+        String sourceDelimiter = detectDelimiter(headerLine);
+        data.delimiter = ",";
         String headerNoEol = stripEol(headerLine);
         data.trailingDelimiter = false;
         data.headerLine = headerNoEol;
 
-        List<String> sourceHeaderFields = splitPreserveAll(headerNoEol, data.delimiter);
+        List<String> sourceHeaderFields = splitPreserveAll(headerNoEol, sourceDelimiter);
         Map<String, Integer> sourceHeaderMap = buildHeaderMap(sourceHeaderFields);
         ensureHeaderColumns(sourceHeaderMap, "No se encontro la columna ASIN en el CSV base.",
                 "No se encontro la columna IVA en el CSV base.");
@@ -317,7 +318,7 @@ public class IvaEngine {
                     continue;
                 }
                 data.baseOriginalRows++;
-                List<String> row = splitPreserveAll(line, data.delimiter);
+                List<String> row = splitPreserveAll(line, sourceDelimiter);
                 padRow(row, sourceHeaderFields.size());
 
                 String asin = row.get(sourceAsinIdx).trim();
@@ -358,7 +359,7 @@ public class IvaEngine {
         XlsxZip.SheetRef sheetRef = zip.resolveSheet(selectedSheet == null ? BASE_SHEET_NAME : selectedSheet);
 
         BaseData data = new BaseData();
-        data.delimiter = ";";
+        data.delimiter = ",";
         data.trailingDelimiter = false;
         data.baseMap = new LinkedHashMap<>();
         data.baseDuplicates = new ArrayList<>();
