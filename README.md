@@ -66,9 +66,9 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 - Archivo resumen `.resumen` (properties) con contadores y rutas generadas.
 
 Estructura de guardado:
-- `Bases de datos de IVAS/<anio>/<Mes>/`
+- `Bases de datos de IVAS/<anio>/<Mes>/<MM-dd-yyyy>/`
 - Ejemplo:
-  - `Bases de datos de IVAS/2026/Febrero/Base de Datos IVA Amazon 1842 03-25-2026.csv`
+  - `Bases de datos de IVAS/2026/Marzo/03-27-2026/Base de Datos IVA Amazon 1842 03-27-2026.csv`
 
 ## Interfaz grafica
 - Ejecuta `control.Main`.

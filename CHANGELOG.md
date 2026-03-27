@@ -7,6 +7,7 @@
 - Se elimina la dependencia de columna `SKU` vacia.
 - `FECHA` usa fecha local del sistema con formato `MM/dd/yyyy`.
 - `FECHA` solo se actualiza en ASIN de reporte cuando hubo alta nueva o cambio de estado de IVA.
+- El guardado ahora usa carpeta diaria dentro del arbol: `Bases de datos de IVAS/<anio>/<Mes>/<MM-dd-yyyy>/`.
 
 ### Actualizacion mayor: procesamiento de multiples reportes Amazon
 - El motor acepta uno o varios `--reporte` y consolida por ASIN en una sola corrida.

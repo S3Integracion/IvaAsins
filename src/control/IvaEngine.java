@@ -98,6 +98,7 @@ public class IvaEngine {
         Path rootFolder;
         Path yearFolder;
         Path monthFolder;
+        Path dayFolder;
         Path generatedCsv;
         Path generatedLog;
         String timestamp;
@@ -173,7 +174,7 @@ public class IvaEngine {
 
         OutputLayout outputLayout = resolveOutputLayout(request.baseFile.toPath(), request.outputRootDirectory);
         writeBaseCsv(outputLayout.generatedCsv, baseData);
-        outputLayout.copiedReportTxts = copyReportFiles(reportFiles, outputLayout.monthFolder, outputLayout.timestamp);
+        outputLayout.copiedReportTxts = copyReportFiles(reportFiles, outputLayout.dayFolder, outputLayout.timestamp);
         outputLayout.copiedReportTxt = outputLayout.copiedReportTxts.isEmpty() ? null : outputLayout.copiedReportTxts.get(0);
 
         writePreviewCsv(request.previewCsv.toPath(), baseData, applyStats.firstNewIndex);
@@ -184,7 +185,8 @@ public class IvaEngine {
         Map<String, String> resumen = buildResumen(baseData, reportStats, applyStats, cancelledOnly.size());
         resumen.put("output_root_folder", outputLayout.rootFolder.toString());
         resumen.put("output_year_folder", outputLayout.yearFolder.toString());
-        resumen.put("output_month_folder", outputLayout.monthFolder.toString());
+        // Compatibilidad: se mantiene la llave historica apuntando a la carpeta final de artefactos.
+        resumen.put("output_month_folder", outputLayout.dayFolder.toString());
         resumen.put("output_csv", outputLayout.generatedCsv.toString());
         resumen.put("output_log", outputLayout.generatedLog.toString());
         resumen.put("reportes_procesados", Integer.toString(reportStats.reportFilesProcessed));
@@ -864,6 +866,7 @@ public class IvaEngine {
     private OutputLayout resolveOutputLayout(Path basePath, File outputRootDirectory) throws IOException {
         LocalDateTime now = LocalDateTime.now();
         String timestamp = now.format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
+        String dayFolderName = now.format(DateTimeFormatter.ofPattern("MM-dd-yyyy"));
         Path detectedOriginRoot = detectExistingOriginRoot(basePath);
         Path targetRootBase;
         if (detectedOriginRoot != null) {
@@ -882,10 +885,11 @@ public class IvaEngine {
         layout.rootFolder = targetRootBase.resolve("Bases de datos de IVAS");
         layout.yearFolder = layout.rootFolder.resolve(Integer.toString(now.getYear()));
         layout.monthFolder = layout.yearFolder.resolve(monthNameEs(now.getMonth()));
-        Files.createDirectories(layout.monthFolder);
+        layout.dayFolder = layout.monthFolder.resolve(dayFolderName);
+        Files.createDirectories(layout.dayFolder);
         layout.timestamp = timestamp;
 
-        layout.generatedCsv = ensureUnique(layout.monthFolder,
+        layout.generatedCsv = ensureUnique(layout.dayFolder,
                 "Base de Datos IVA Amazon " + timestamp,
                 ".csv");
         layout.generatedLog = replaceExtension(layout.generatedCsv, ".log");
@@ -900,16 +904,29 @@ public class IvaEngine {
         Path selectedRoot = null;
 
         while (current != null) {
-            Path yearFolder = current.getParent();
+            Path monthFolder = current.getParent();
+            Path yearFolder = monthFolder == null ? null : monthFolder.getParent();
             Path basesFolder = yearFolder == null ? null : yearFolder.getParent();
             Path rootFolder = basesFolder == null ? null : basesFolder.getParent();
 
-            if (yearFolder != null && basesFolder != null && rootFolder != null
-                    && isMonthFolderName(current.getFileName())
+            if (monthFolder != null && yearFolder != null && basesFolder != null && rootFolder != null
+                    && isDayFolderName(current.getFileName())
+                    && isMonthFolderName(monthFolder.getFileName())
                     && isYearFolderName(yearFolder.getFileName())
                     && isBasesFolderName(basesFolder.getFileName())) {
                 // Se conserva la coincidencia mas externa (mas cercana al origen de la ruta).
                 selectedRoot = rootFolder;
+            }
+
+            // Compatibilidad con arbol historico sin carpeta dia: <raiz>/Bases de datos de IVAS/<anio>/<mes>/archivo
+            Path legacyYearFolder = current.getParent();
+            Path legacyBasesFolder = legacyYearFolder == null ? null : legacyYearFolder.getParent();
+            Path legacyRootFolder = legacyBasesFolder == null ? null : legacyBasesFolder.getParent();
+            if (legacyYearFolder != null && legacyBasesFolder != null && legacyRootFolder != null
+                    && isMonthFolderName(current.getFileName())
+                    && isYearFolderName(legacyYearFolder.getFileName())
+                    && isBasesFolderName(legacyBasesFolder.getFileName())) {
+                selectedRoot = legacyRootFolder;
             }
 
             current = current.getParent();
@@ -957,7 +974,15 @@ public class IvaEngine {
                 || "diciembre".equals(month);
     }
 
-    private List<Path> copyReportFiles(List<File> reportFiles, Path monthFolder, String timestamp) throws IOException {
+    private boolean isDayFolderName(Path folderName) {
+        if (folderName == null) {
+            return false;
+        }
+        String value = folderName.toString().trim();
+        return value.matches("\\d{2}-\\d{2}-\\d{4}");
+    }
+
+    private List<Path> copyReportFiles(List<File> reportFiles, Path dayFolder, String timestamp) throws IOException {
         List<Path> copied = new ArrayList<>();
         for (int i = 0; i < reportFiles.size(); i++) {
             File report = reportFiles.get(i);
@@ -965,7 +990,7 @@ public class IvaEngine {
             if (i > 0) {
                 baseName += " (" + (i + 1) + ")";
             }
-            Path target = resolveUniqueWithBaseName(monthFolder, baseName, ".txt");
+            Path target = resolveUniqueWithBaseName(dayFolder, baseName, ".txt");
             Files.copy(report.toPath(), target, StandardCopyOption.REPLACE_EXISTING);
             copied.add(target);
         }
