@@ -6,6 +6,8 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FileDialog;
 import java.awt.FlowLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.Cursor;
 import java.awt.Image;
@@ -48,8 +50,6 @@ import javax.swing.SwingWorker;
 import javax.swing.TransferHandler;
 import javax.swing.table.DefaultTableModel;
 
-import com.intellij.uiDesigner.core.GridConstraints;
-import com.intellij.uiDesigner.core.GridLayoutManager;
 import control.MotorIvaRunner;
 
 public class Principal extends JFrame {
@@ -801,65 +801,95 @@ public class Principal extends JFrame {
         panelTop.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
 
         panelFields = new JPanel();
-        panelFields.setLayout(new GridLayoutManager(3, 3, new Insets(5, 5, 5, 5), -1, -1));
+        panelFields.setLayout(new GridBagLayout());
         panelTop.add(panelFields, BorderLayout.CENTER);
 
         JLabel lblBase = new JLabel();
         lblBase.setText("Base IVA (.csv o .xlsx)");
-        panelFields.add(lblBase, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcLblBase = new GridBagConstraints();
+        gbcLblBase.gridx = 0;
+        gbcLblBase.gridy = 0;
+        gbcLblBase.anchor = GridBagConstraints.WEST;
+        gbcLblBase.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblBase, gbcLblBase);
 
         txtBase = new JTextField();
         txtBase.setColumns(50);
-        panelFields.add(txtBase, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK
-                        | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null));
+        GridBagConstraints gbcTxtBase = new GridBagConstraints();
+        gbcTxtBase.gridx = 1;
+        gbcTxtBase.gridy = 0;
+        gbcTxtBase.weightx = 1.0;
+        gbcTxtBase.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtBase.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtBase, gbcTxtBase);
 
         btnBuscarBase = new JButton();
         btnBuscarBase.setText("Buscar");
         btnBuscarBase.setPreferredSize(new Dimension(90, 28));
-        panelFields.add(btnBuscarBase, new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_CENTER,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcBtnBase = new GridBagConstraints();
+        gbcBtnBase.gridx = 2;
+        gbcBtnBase.gridy = 0;
+        gbcBtnBase.anchor = GridBagConstraints.EAST;
+        gbcBtnBase.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarBase, gbcBtnBase);
 
         JLabel lblReporte = new JLabel();
         lblReporte.setText("Reporte Amazon (.txt)");
-        panelFields.add(lblReporte, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcLblReporte = new GridBagConstraints();
+        gbcLblReporte.gridx = 0;
+        gbcLblReporte.gridy = 1;
+        gbcLblReporte.anchor = GridBagConstraints.WEST;
+        gbcLblReporte.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblReporte, gbcLblReporte);
 
         txtReporte = new JTextField();
         txtReporte.setColumns(50);
-        panelFields.add(txtReporte, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK
-                        | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null));
+        GridBagConstraints gbcTxtReporte = new GridBagConstraints();
+        gbcTxtReporte.gridx = 1;
+        gbcTxtReporte.gridy = 1;
+        gbcTxtReporte.weightx = 1.0;
+        gbcTxtReporte.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtReporte.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtReporte, gbcTxtReporte);
 
         btnBuscarReporte = new JButton();
         btnBuscarReporte.setText("Buscar");
         btnBuscarReporte.setPreferredSize(new Dimension(90, 28));
-        panelFields.add(btnBuscarReporte, new GridConstraints(1, 2, 1, 1, GridConstraints.ANCHOR_CENTER,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcBtnReporte = new GridBagConstraints();
+        gbcBtnReporte.gridx = 2;
+        gbcBtnReporte.gridy = 1;
+        gbcBtnReporte.anchor = GridBagConstraints.EAST;
+        gbcBtnReporte.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarReporte, gbcBtnReporte);
 
         JLabel lblSalida = new JLabel();
         lblSalida.setText("Carpeta raiz de guardado (opcional)");
-        panelFields.add(lblSalida, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcLblSalida = new GridBagConstraints();
+        gbcLblSalida.gridx = 0;
+        gbcLblSalida.gridy = 2;
+        gbcLblSalida.anchor = GridBagConstraints.WEST;
+        gbcLblSalida.insets = new Insets(5, 5, 5, 10);
+        panelFields.add(lblSalida, gbcLblSalida);
 
         txtSalida = new JTextField();
         txtSalida.setColumns(50);
-        panelFields.add(txtSalida, new GridConstraints(2, 1, 1, 1, GridConstraints.ANCHOR_WEST,
-                GridConstraints.FILL_HORIZONTAL, GridConstraints.SIZEPOLICY_CAN_SHRINK
-                        | GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null));
+        GridBagConstraints gbcTxtSalida = new GridBagConstraints();
+        gbcTxtSalida.gridx = 1;
+        gbcTxtSalida.gridy = 2;
+        gbcTxtSalida.weightx = 1.0;
+        gbcTxtSalida.fill = GridBagConstraints.HORIZONTAL;
+        gbcTxtSalida.insets = new Insets(5, 0, 5, 10);
+        panelFields.add(txtSalida, gbcTxtSalida);
 
         btnBuscarSalida = new JButton();
         btnBuscarSalida.setText("Buscar");
         btnBuscarSalida.setPreferredSize(new Dimension(90, 28));
-        panelFields.add(btnBuscarSalida, new GridConstraints(2, 2, 1, 1, GridConstraints.ANCHOR_CENTER,
-                GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null,
-                null, null));
+        GridBagConstraints gbcBtnSalida = new GridBagConstraints();
+        gbcBtnSalida.gridx = 2;
+        gbcBtnSalida.gridy = 2;
+        gbcBtnSalida.anchor = GridBagConstraints.EAST;
+        gbcBtnSalida.insets = new Insets(5, 0, 5, 5);
+        panelFields.add(btnBuscarSalida, gbcBtnSalida);
 
         panelButtons = new JPanel();
         panelButtons.setLayout(new FlowLayout(FlowLayout.LEFT, 10, 0));

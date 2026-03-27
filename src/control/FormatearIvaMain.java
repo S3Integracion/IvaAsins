@@ -7,19 +7,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * CLI compatible con el motor historico para soporte tecnico.
+ * Servicio CLI compatible con el motor historico para soporte tecnico.
+ * El punto de entrada oficial del programa es {@link Main}.
  */
 public class FormatearIvaMain {
 
-    public static void main(String[] args) {
-        try {
-            int exit = run(args);
-            System.exit(exit);
-        } catch (Exception ex) {
-            System.err.println("ERROR: " + ex.getMessage());
-            System.exit(1);
-        }
-    }
 
     public static int run(String[] args) throws IOException {
         Map<String, String> options = parseOptions(args);

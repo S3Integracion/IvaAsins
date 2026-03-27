@@ -10,6 +10,11 @@ import interfaz.Principal;
 public class Main {
 
     public static void main(String[] args) {
+        if (args != null && args.length > 0) {
+            runCli(args);
+            return;
+        }
+
         applyModernStyle();
         EventQueue.invokeLater(() -> {
             try {
@@ -19,6 +24,16 @@ public class Main {
                 e.printStackTrace();
             }
         });
+    }
+
+    private static void runCli(String[] args) {
+        try {
+            int exit = FormatearIvaMain.run(args);
+            System.exit(exit);
+        } catch (Exception ex) {
+            System.err.println("ERROR: " + ex.getMessage());
+            System.exit(1);
+        }
     }
 
     private static void applyModernStyle() {
