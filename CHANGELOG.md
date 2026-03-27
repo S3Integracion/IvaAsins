@@ -2,6 +2,19 @@
 
 ## 2026-03-25
 
+### Actualizacion mayor: procesamiento de multiples reportes Amazon
+- El motor acepta uno o varios `--reporte` y consolida por ASIN en una sola corrida.
+- Si un ASIN aparece en multiples reportes, gana la fila con fecha mas reciente:
+  - prioridad `last-updated-date`
+  - fallback `purchase-date`
+  - empate: prioridad IVA `SI`.
+- Reportes de entrada duplicados por ruta absoluta se deduplican antes de procesar.
+- Se copian todos los reportes usados a la carpeta versionada:
+  - primer archivo sin sufijo
+  - desde el segundo: `(... (2), (3), ...)`.
+- UI actualizada para multi-seleccion de reportes y despliegue de lista completa de rutas.
+- CLI actualizada para `--reporte` repetible.
+
 ### Actualizacion mayor: salidas versionadas sin sobrescribir base
 - Se cambia el flujo para no modificar la base original y generar siempre un nuevo CSV:
   - `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`.

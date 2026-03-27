@@ -14,9 +14,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.Month;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -55,11 +60,12 @@ import org.xml.sax.SAXException;
  */
 public class IvaEngine {
 
-    public static final String BASE_SHEET_NAME = "IVA's Base de Datos";
+    public static final String BASE_SHEET_NAME = "Base de Datos IVA Amazon";
 
     public static class ProcessRequest {
         public File baseFile;
         public File reporteTxt;
+        public List<File> reporteTxts;
         public File previewCsv;
         public File resumenFile;
         public File reporteOutFile;
@@ -90,7 +96,9 @@ public class IvaEngine {
         Path monthFolder;
         Path generatedCsv;
         Path generatedLog;
+        String timestamp;
         Path copiedReportTxt;
+        List<Path> copiedReportTxts;
     }
 
     private static class BaseData {
@@ -116,9 +124,24 @@ public class IvaEngine {
         LinkedHashMap<String, String> reportMap = new LinkedHashMap<>();
         int duplicateRows;
         int totalRows;
+        int reportFilesProcessed;
         int cancelledRows;
         Set<String> cancelledAsins = new LinkedHashSet<>();
         int noAsinRows;
+    }
+
+    private static class ReportCandidate {
+        String asin;
+        String iva;
+        Instant timestamp;
+        int sourceOrder;
+
+        ReportCandidate(String asin, String iva, Instant timestamp, int sourceOrder) {
+            this.asin = asin;
+            this.iva = iva;
+            this.timestamp = timestamp;
+            this.sourceOrder = sourceOrder;
+        }
     }
 
     private static class ApplyStats {
@@ -130,6 +153,7 @@ public class IvaEngine {
 
     public ProcessResult process(ProcessRequest request) throws IOException {
         validateRequest(request);
+        List<File> reportFiles = resolveReportFiles(request);
 
         String basePath = request.baseFile.getAbsolutePath();
         String ext = extensionOf(basePath);
@@ -139,12 +163,13 @@ public class IvaEngine {
                 ? loadBaseXlsx(request.baseFile, request.sheetName)
                 : loadBaseCsv(request.baseFile);
 
-        ReportStats reportStats = loadReport(request.reporteTxt);
+        ReportStats reportStats = loadReports(reportFiles);
         ApplyStats applyStats = applyReportToBase(baseData, reportStats.reportMap);
 
         OutputLayout outputLayout = resolveOutputLayout(request.baseFile.toPath(), request.outputRootDirectory);
         writeBaseCsv(outputLayout.generatedCsv, baseData);
-        Files.copy(request.reporteTxt.toPath(), outputLayout.copiedReportTxt, StandardCopyOption.REPLACE_EXISTING);
+        outputLayout.copiedReportTxts = copyReportFiles(reportFiles, outputLayout.monthFolder, outputLayout.timestamp);
+        outputLayout.copiedReportTxt = outputLayout.copiedReportTxts.isEmpty() ? null : outputLayout.copiedReportTxts.get(0);
 
         writePreviewCsv(request.previewCsv.toPath(), baseData, applyStats.firstNewIndex);
 
@@ -157,7 +182,9 @@ public class IvaEngine {
         resumen.put("output_month_folder", outputLayout.monthFolder.toString());
         resumen.put("output_csv", outputLayout.generatedCsv.toString());
         resumen.put("output_log", outputLayout.generatedLog.toString());
-        resumen.put("output_reporte_amazon", outputLayout.copiedReportTxt.toString());
+        resumen.put("reportes_procesados", Integer.toString(reportStats.reportFilesProcessed));
+        resumen.put("output_reporte_amazon", outputLayout.copiedReportTxt == null ? "" : outputLayout.copiedReportTxt.toString());
+        resumen.put("output_reportes_amazon", joinPaths(outputLayout.copiedReportTxts));
         writeProperties(request.resumenFile.toPath(), resumen);
 
         writeReport(
@@ -165,9 +192,9 @@ public class IvaEngine {
                 request.baseFile,
                 isXlsx ? "XLSX" : "CSV",
                 baseData.xlsx != null ? baseData.xlsx.sheetName : null,
-                request.reporteTxt,
+                reportFiles,
                 outputLayout.generatedCsv,
-                outputLayout.copiedReportTxt,
+                outputLayout.copiedReportTxts,
                 resumen,
                 applyStats.added,
                 applyStats.modified,
@@ -199,15 +226,40 @@ public class IvaEngine {
         if (request.baseFile == null || !request.baseFile.isFile()) {
             throw new IOException("No existe la base: " + pathOrNull(request.baseFile));
         }
-        if (request.reporteTxt == null || !request.reporteTxt.isFile()) {
-            throw new IOException("No existe el reporte: " + pathOrNull(request.reporteTxt));
-        }
         if (request.previewCsv == null) {
             throw new IOException("Falta archivo de salida preview.");
         }
         if (request.resumenFile == null) {
             throw new IOException("Falta archivo de resumen.");
         }
+    }
+
+    private List<File> resolveReportFiles(ProcessRequest request) throws IOException {
+        LinkedHashMap<String, File> unique = new LinkedHashMap<>();
+        if (request.reporteTxt != null) {
+            File absolute = request.reporteTxt.getAbsoluteFile();
+            unique.put(absolute.getAbsolutePath(), absolute);
+        }
+        if (request.reporteTxts != null) {
+            for (File reporte : request.reporteTxts) {
+                if (reporte == null) {
+                    continue;
+                }
+                File absolute = reporte.getAbsoluteFile();
+                unique.putIfAbsent(absolute.getAbsolutePath(), absolute);
+            }
+        }
+        if (unique.isEmpty()) {
+            throw new IOException("No existe el reporte: null");
+        }
+
+        List<File> files = new ArrayList<>(unique.values());
+        for (File file : files) {
+            if (!file.isFile()) {
+                throw new IOException("No existe el reporte: " + file.getAbsolutePath());
+            }
+        }
+        return files;
     }
 
     private String pathOrNull(File file) {
@@ -362,81 +414,151 @@ public class IvaEngine {
         return data;
     }
 
-    private ReportStats loadReport(File reporteTxt) throws IOException {
-        String headerLine = readHeaderLine(reporteTxt.toPath());
-        if (headerLine == null || headerLine.isEmpty()) {
-            throw new IOException("El reporte esta vacio.");
-        }
-        headerLine = stripBom(headerLine);
-
-        String delimiter = detectDelimiter(headerLine);
+    private ReportStats loadReports(List<File> reportFiles) throws IOException {
         ReportStats stats = new ReportStats();
+        stats.reportFilesProcessed = reportFiles.size();
+        LinkedHashMap<String, ReportCandidate> winners = new LinkedHashMap<>();
 
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(reporteTxt), StandardCharsets.UTF_8))) {
-            String line = reader.readLine();
-            if (line == null) {
-                throw new IOException("El reporte no tiene encabezados.");
+        for (int fileIndex = 0; fileIndex < reportFiles.size(); fileIndex++) {
+            File reporteTxt = reportFiles.get(fileIndex);
+            String headerLine = readHeaderLine(reporteTxt.toPath());
+            if (headerLine == null || headerLine.isEmpty()) {
+                throw new IOException("El reporte esta vacio: " + reporteTxt.getAbsolutePath());
             }
-            line = stripBom(line);
-            List<String> rawHeaders = splitPreserveAll(line, delimiter);
-            List<String> normalized = new ArrayList<>();
-            for (String h : rawHeaders) {
-                normalized.add(normalizeHeader(h));
-            }
-            Map<String, Integer> map = new HashMap<>();
-            for (int i = 0; i < normalized.size(); i++) {
-                map.putIfAbsent(normalized.get(i), i);
-            }
-            List<String> required = Arrays.asList("asin", "item-tax", "order-status");
-            List<String> missing = new ArrayList<>();
-            for (String req : required) {
-                if (!map.containsKey(req)) {
-                    missing.add(req);
+            headerLine = stripBom(headerLine);
+
+            String delimiter = detectDelimiter(headerLine);
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(new FileInputStream(reporteTxt), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line == null) {
+                    throw new IOException("El reporte no tiene encabezados: " + reporteTxt.getAbsolutePath());
                 }
-            }
-            if (!missing.isEmpty()) {
-                throw new IOException("Faltan columnas en el reporte: " + String.join(", ", missing));
-            }
-
-            while ((line = reader.readLine()) != null) {
-                if (line.isEmpty()) {
-                    continue;
+                line = stripBom(line);
+                List<String> rawHeaders = splitPreserveAll(line, delimiter);
+                List<String> normalized = new ArrayList<>();
+                for (String h : rawHeaders) {
+                    normalized.add(normalizeHeader(h));
                 }
-                stats.totalRows++;
-                List<String> row = splitPreserveAll(line, delimiter);
-                padRow(row, rawHeaders.size());
+                Map<String, Integer> map = new HashMap<>();
+                for (int i = 0; i < normalized.size(); i++) {
+                    map.putIfAbsent(normalized.get(i), i);
+                }
 
-                String status = row.get(map.get("order-status")).trim();
-                if (isCancelled(status)) {
-                    stats.cancelledRows++;
-                    String cancelledAsin = row.get(map.get("asin")).trim().toUpperCase(Locale.ROOT);
-                    if (!cancelledAsin.isEmpty()) {
-                        stats.cancelledAsins.add(cancelledAsin);
+                List<String> required = Arrays.asList("asin", "item-tax", "order-status");
+                List<String> missing = new ArrayList<>();
+                for (String req : required) {
+                    if (!map.containsKey(req)) {
+                        missing.add(req);
                     }
-                    continue;
+                }
+                if (!missing.isEmpty()) {
+                    throw new IOException(
+                            "Faltan columnas en el reporte " + reporteTxt.getName() + ": " + String.join(", ", missing));
                 }
 
-                String asin = row.get(map.get("asin")).trim();
-                if (asin.isEmpty()) {
-                    stats.noAsinRows++;
-                    continue;
-                }
-                String asinNorm = asin.toUpperCase(Locale.ROOT);
-                String iva = hasTax(row.get(map.get("item-tax"))) ? "SI" : "NO";
-
-                if (stats.reportMap.containsKey(asinNorm)) {
-                    stats.duplicateRows++;
-                    if ("NO".equals(stats.reportMap.get(asinNorm)) && "SI".equals(iva)) {
-                        stats.reportMap.put(asinNorm, "SI");
+                while ((line = reader.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        continue;
                     }
-                    continue;
+                    stats.totalRows++;
+                    List<String> row = splitPreserveAll(line, delimiter);
+                    padRow(row, rawHeaders.size());
+
+                    String status = row.get(map.get("order-status")).trim();
+                    if (isCancelled(status)) {
+                        stats.cancelledRows++;
+                        String cancelledAsin = row.get(map.get("asin")).trim().toUpperCase(Locale.ROOT);
+                        if (!cancelledAsin.isEmpty()) {
+                            stats.cancelledAsins.add(cancelledAsin);
+                        }
+                        continue;
+                    }
+
+                    String asin = row.get(map.get("asin")).trim();
+                    if (asin.isEmpty()) {
+                        stats.noAsinRows++;
+                        continue;
+                    }
+                    String asinNorm = asin.toUpperCase(Locale.ROOT);
+                    String iva = hasTax(row.get(map.get("item-tax"))) ? "SI" : "NO";
+                    Instant timestamp = resolveReportTimestamp(row, map);
+
+                    ReportCandidate candidate = new ReportCandidate(asinNorm, iva, timestamp, fileIndex);
+                    ReportCandidate winner = winners.get(asinNorm);
+                    if (winner == null) {
+                        winners.put(asinNorm, candidate);
+                    } else {
+                        stats.duplicateRows++;
+                        if (isBetterCandidate(candidate, winner)) {
+                            winners.put(asinNorm, candidate);
+                        }
+                    }
                 }
-                stats.reportMap.put(asinNorm, iva);
             }
         }
 
+        for (ReportCandidate winner : winners.values()) {
+            stats.reportMap.put(winner.asin, winner.iva);
+        }
         return stats;
+    }
+
+    private Instant resolveReportTimestamp(List<String> row, Map<String, Integer> map) {
+        String primary = valueAt(row, map.get("last-updated-date"));
+        Instant primaryTs = parseReportInstant(primary);
+        if (primaryTs != null) {
+            return primaryTs;
+        }
+        String fallback = valueAt(row, map.get("purchase-date"));
+        Instant fallbackTs = parseReportInstant(fallback);
+        return fallbackTs == null ? Instant.EPOCH : fallbackTs;
+    }
+
+    private String valueAt(List<String> row, Integer index) {
+        if (index == null || index < 0 || index >= row.size()) {
+            return "";
+        }
+        return Objects.toString(row.get(index), "").trim();
+    }
+
+    private Instant parseReportInstant(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        String value = raw.trim();
+        try {
+            return OffsetDateTime.parse(value).toInstant();
+        } catch (DateTimeParseException ex) {
+            // intenta otros formatos comunes
+        }
+        try {
+            return ZonedDateTime.parse(value).toInstant();
+        } catch (DateTimeParseException ex) {
+            // intenta fecha local sin zona
+        }
+        try {
+            return LocalDateTime.parse(value).atZone(ZoneId.systemDefault()).toInstant();
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
+    }
+
+    private boolean isBetterCandidate(ReportCandidate candidate, ReportCandidate winner) {
+        int compare = candidate.timestamp.compareTo(winner.timestamp);
+        if (compare > 0) {
+            return true;
+        }
+        if (compare < 0) {
+            return false;
+        }
+        if ("SI".equals(candidate.iva) && "NO".equals(winner.iva)) {
+            return true;
+        }
+        if ("NO".equals(candidate.iva) && "SI".equals(winner.iva)) {
+            return false;
+        }
+        return false;
     }
 
     private ApplyStats applyReportToBase(BaseData baseData, LinkedHashMap<String, String> reportMap) {
@@ -595,8 +717,8 @@ public class IvaEngine {
         }
     }
 
-    private void writeReport(Path reportPath, File baseFile, String baseType, String sheetName, File reporteFile,
-            Path generatedCsv, Path copiedReportPath, Map<String, String> resumen, List<String[]> added,
+    private void writeReport(Path reportPath, File baseFile, String baseType, String sheetName, List<File> reportFiles,
+            Path generatedCsv, List<Path> copiedReportPaths, Map<String, String> resumen, List<String[]> added,
             List<String[]> modified, Set<String> cancelledOnly, List<String> baseDuplicates, int previewStartIndex)
             throws IOException {
         ensureParent(reportPath);
@@ -617,10 +739,20 @@ public class IvaEngine {
         if ("XLSX".equals(baseType)) {
             lines.add("Hoja usada: " + Objects.toString(sheetName, ""));
         }
-        lines.add("Reporte inventario: " + reporteFile.getAbsolutePath());
-        lines.add("Directorio reporte origen: " + Objects.toString(reporteFile.getParent(), ""));
+        lines.add("Reportes inventario procesados: " + reportFiles.size());
+        for (int i = 0; i < reportFiles.size(); i++) {
+            File report = reportFiles.get(i);
+            lines.add("Reporte inventario [" + (i + 1) + "]: " + report.getAbsolutePath());
+            lines.add("Directorio reporte origen [" + (i + 1) + "]: " + Objects.toString(report.getParent(), ""));
+        }
         lines.add("CSV generado: " + generatedCsv.toString());
-        lines.add("Reporte Amazon copiado: " + copiedReportPath.toString());
+        if (copiedReportPaths == null || copiedReportPaths.isEmpty()) {
+            lines.add("Reporte Amazon copiado: ");
+        } else {
+            for (int i = 0; i < copiedReportPaths.size(); i++) {
+                lines.add("Reporte Amazon copiado [" + (i + 1) + "]: " + copiedReportPaths.get(i));
+            }
+        }
         lines.add("Carpeta de salida del proceso: " + reportPath.getParent().toString());
         lines.add("Total filas en reporte: " + resumen.get("total_reporte"));
         lines.add("Filas canceladas: " + resumen.get("cancelados_filas") + " (ASIN unicos: "
@@ -699,13 +831,49 @@ public class IvaEngine {
         layout.yearFolder = layout.rootFolder.resolve(Integer.toString(now.getYear()));
         layout.monthFolder = layout.yearFolder.resolve(monthNameEs(now.getMonth()));
         Files.createDirectories(layout.monthFolder);
+        layout.timestamp = timestamp;
 
         layout.generatedCsv = ensureUnique(layout.monthFolder,
                 "Base de Datos IVA Amazon " + timestamp,
                 ".csv");
         layout.generatedLog = replaceExtension(layout.generatedCsv, ".log");
-        layout.copiedReportTxt = ensureUnique(layout.monthFolder, "Reporte de Amazon " + timestamp, ".txt");
         return layout;
+    }
+
+    private List<Path> copyReportFiles(List<File> reportFiles, Path monthFolder, String timestamp) throws IOException {
+        List<Path> copied = new ArrayList<>();
+        for (int i = 0; i < reportFiles.size(); i++) {
+            File report = reportFiles.get(i);
+            String baseName = "Reporte de Amazon " + timestamp;
+            if (i > 0) {
+                baseName += " (" + (i + 1) + ")";
+            }
+            Path target = resolveUniqueWithBaseName(monthFolder, baseName, ".txt");
+            Files.copy(report.toPath(), target, StandardCopyOption.REPLACE_EXISTING);
+            copied.add(target);
+        }
+        return copied;
+    }
+
+    private Path resolveUniqueWithBaseName(Path parent, String baseName, String extension) {
+        Path candidate = parent.resolve(baseName + extension);
+        int counter = 2;
+        while (Files.exists(candidate)) {
+            candidate = parent.resolve(baseName + " (" + counter + ")" + extension);
+            counter++;
+        }
+        return candidate;
+    }
+
+    private String joinPaths(List<Path> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return "";
+        }
+        List<String> raw = new ArrayList<>();
+        for (Path path : paths) {
+            raw.add(path.toString());
+        }
+        return String.join("|", raw);
     }
 
     private Path ensureUnique(Path parent, String baseName, String extension) {

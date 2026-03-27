@@ -27,6 +27,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -82,6 +84,7 @@ public class Principal extends JFrame {
     private File tempPreview;
     private File tempResumen;
     private final MotorIvaRunner runner = new MotorIvaRunner();
+    private final List<File> selectedReportes = new ArrayList<>();
 
     /**
      * Create the application.
@@ -153,9 +156,9 @@ public class Principal extends JFrame {
     }
 
     private void onSelectReporte() {
-        File file = chooseOpenFile("Selecciona el reporte .txt", new String[] { "txt" });
-        if (file != null) {
-            txtReporte.setText(file.getAbsolutePath());
+        List<File> files = chooseOpenFiles("Selecciona reporte(s) .txt", new String[] { "txt" });
+        if (files != null && !files.isEmpty()) {
+            setSelectedReportes(files);
         }
     }
 
@@ -175,12 +178,8 @@ public class Principal extends JFrame {
             showError("La base debe ser un archivo .csv o .xlsx.");
             return;
         }
-        File reporte = getFileFromField(txtReporte, "reporte .txt");
-        if (reporte == null) {
-            return;
-        }
-        if (!isTxt(reporte)) {
-            showError("El reporte debe ser un archivo .txt.");
+        List<File> reportes = resolveReportFilesFromInput();
+        if (reportes == null || reportes.isEmpty()) {
             return;
         }
         String sheetName = resolveSheetName(base);
@@ -191,22 +190,24 @@ public class Principal extends JFrame {
         if (outputRoot == null) {
             return;
         }
-        runMotor(base, reporte, outputRoot, sheetName);
+        runMotor(base, reportes, outputRoot, sheetName);
     }
 
     private void onClear() {
         txtBase.setText("");
         txtReporte.setText("");
+        txtReporte.setToolTipText(null);
+        selectedReportes.clear();
         if (txtSalida != null) {
             txtSalida.setText("");
         }
         tablePreview.setModel(new DefaultTableModel());
-        lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
+        lblStatus.setText("Listo. Arrastra base .csv/.xlsx y uno o varios reportes .txt.");
         tempPreview = null;
         tempResumen = null;
     }
 
-    private void runMotor(File base, File reporte, File outputRoot, String sheetName) {
+    private void runMotor(File base, List<File> reportes, File outputRoot, String sheetName) {
         setButtonsEnabled(false);
         lblStatus.setText("Procesando...");
 
@@ -220,7 +221,7 @@ public class Principal extends JFrame {
                 String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
                 tempPreview = new File(tempDir, "IvaAsins.preview " + timestamp + ".csv");
                 tempResumen = new File(tempDir, "IvaAsins.resumen " + timestamp + ".resumen");
-                return runner.ejecutar(base, reporte, outputRoot, tempPreview, tempResumen, sheetName);
+                return runner.ejecutar(base, reportes, outputRoot, tempPreview, tempResumen, sheetName);
             }
 
             @Override
@@ -236,6 +237,7 @@ public class Principal extends JFrame {
                     loadPreview(tempPreview, 100);
                     lblStatus.setText("CSV generado. Agregados: " + resultado.agregados
                             + " | Modificados: " + resultado.modificados
+                            + " | Reportes: " + reportes.size()
                             + " | Carpeta: " + (resultado.carpetaSalida == null ? "" : resultado.carpetaSalida));
                     showSummaryPopup(resultado);
                 } catch (Exception ex) {
@@ -248,6 +250,41 @@ public class Principal extends JFrame {
     }
     private File chooseOpenFile(String title, String[] extensions) {
         return chooseFile(title, extensions, false, null);
+    }
+
+    private List<File> chooseOpenFiles(String title, String[] extensions) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(title);
+        chooser.setMultiSelectionEnabled(true);
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setCurrentDirectory(new File(System.getProperty("user.home")));
+        int option = chooser.showOpenDialog(this);
+        if (option != JFileChooser.APPROVE_OPTION) {
+            return new ArrayList<>();
+        }
+        File[] selected = chooser.getSelectedFiles();
+        List<File> files = new ArrayList<>();
+        if (selected == null) {
+            return files;
+        }
+        for (File file : selected) {
+            if (file == null) {
+                continue;
+            }
+            if (extensions == null || extensions.length == 0) {
+                files.add(file);
+                continue;
+            }
+            String name = file.getName().toLowerCase();
+            for (String ext : extensions) {
+                if (name.endsWith("." + ext.toLowerCase())) {
+                    files.add(file);
+                    break;
+                }
+            }
+        }
+        return files;
     }
 
     private File chooseDirectory(String title) {
@@ -344,6 +381,103 @@ public class Principal extends JFrame {
         return name.endsWith(".txt");
     }
 
+    private List<File> resolveReportFilesFromInput() {
+        LinkedHashMap<String, File> unique = new LinkedHashMap<>();
+        for (File file : selectedReportes) {
+            if (file == null) {
+                continue;
+            }
+            File absolute = file.getAbsoluteFile();
+            unique.putIfAbsent(absolute.getAbsolutePath(), absolute);
+        }
+
+        String raw = txtReporte == null ? "" : txtReporte.getText();
+        if (raw != null && !raw.trim().isEmpty()) {
+            String[] tokens = raw.split("\\r?\\n|;");
+            for (String token : tokens) {
+                String path = normalizeListadoToken(token);
+                if (path.isEmpty()) {
+                    continue;
+                }
+                File absolute = new File(path).getAbsoluteFile();
+                unique.putIfAbsent(absolute.getAbsolutePath(), absolute);
+            }
+        }
+
+        if (unique.isEmpty()) {
+            showError("Selecciona al menos un reporte .txt.");
+            return null;
+        }
+
+        List<File> reportes = new ArrayList<>(unique.values());
+        for (File reporte : reportes) {
+            if (!reporte.exists() || !reporte.isFile() || !isTxt(reporte)) {
+                showError("No se encontro el reporte .txt: " + reporte.getAbsolutePath());
+                return null;
+            }
+        }
+        setSelectedReportes(reportes);
+        return reportes;
+    }
+
+    private String normalizeListadoToken(String token) {
+        if (token == null) {
+            return "";
+        }
+        String trimmed = token.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        return trimmed.replaceFirst("^\\d+\\)\\s*", "");
+    }
+
+    private void setSelectedReportes(List<File> reportes) {
+        selectedReportes.clear();
+        if (reportes != null) {
+            LinkedHashMap<String, File> unique = new LinkedHashMap<>();
+            for (File file : reportes) {
+                if (file == null) {
+                    continue;
+                }
+                File absolute = file.getAbsoluteFile();
+                unique.putIfAbsent(absolute.getAbsolutePath(), absolute);
+            }
+            selectedReportes.addAll(unique.values());
+        }
+        updateReporteFieldDisplay();
+    }
+
+    private void mergeSelectedReportes(List<File> nuevos) {
+        List<File> merged = new ArrayList<>(selectedReportes);
+        if (nuevos != null) {
+            merged.addAll(nuevos);
+        }
+        setSelectedReportes(merged);
+    }
+
+    private void updateReporteFieldDisplay() {
+        if (txtReporte == null) {
+            return;
+        }
+        if (selectedReportes.isEmpty()) {
+            txtReporte.setText("");
+            txtReporte.setToolTipText(null);
+            return;
+        }
+        if (selectedReportes.size() == 1) {
+            txtReporte.setText(selectedReportes.get(0).getAbsolutePath());
+            txtReporte.setToolTipText(selectedReportes.get(0).getAbsolutePath());
+            return;
+        }
+
+        List<String> paths = new ArrayList<>();
+        for (int i = 0; i < selectedReportes.size(); i++) {
+            paths.add((i + 1) + ") " + selectedReportes.get(i).getAbsolutePath());
+        }
+        txtReporte.setText(String.join("; ", paths));
+        txtReporte.setToolTipText("<html>" + String.join("<br>", paths) + "</html>");
+    }
+
     private String resolveSheetName(File base) {
         if (!isXlsx(base)) {
             return null;
@@ -354,14 +488,14 @@ public class Principal extends JFrame {
                 showError("No se encontraron hojas en el archivo XLSX.");
                 return null;
             }
-            String target = "IVA's Base de Datos";
+            String target = "Base de Datos IVA Amazon";
             for (String sheet : sheets) {
                 if (sheet.equalsIgnoreCase(target)) {
                     return sheet;
                 }
             }
             Object selection = JOptionPane.showInputDialog(this,
-                    "No se encontró la hoja \"IVA's Base de Datos\". Selecciona una hoja:",
+                    "No se encontró la hoja \"Base de Datos IVA Amazon\". Selecciona una hoja:",
                     "Seleccionar hoja", JOptionPane.QUESTION_MESSAGE, null,
                     sheets.toArray(new String[0]), sheets.get(0));
             return selection == null ? null : selection.toString();
@@ -684,6 +818,10 @@ public class Principal extends JFrame {
                 .append("\n");
         lines.append("Reporte Amazon copiado: ")
                 .append(resultado.reporteAmazonCopiado == null ? "" : resultado.reporteAmazonCopiado.getAbsolutePath());
+        if (resultado.reportesAmazonCopiados != null && resultado.reportesAmazonCopiados.size() > 1) {
+            lines.append("\nReportes Amazon copiados: ")
+                    .append(resultado.reportesAmazonCopiados.size());
+        }
 
         String html = "<html><pre>" + lines.toString();
         JOptionPane.showMessageDialog(this, html, "Resumen", JOptionPane.INFORMATION_MESSAGE);
@@ -755,6 +893,7 @@ public class Principal extends JFrame {
             return false;
         }
         boolean assigned = false;
+        List<File> droppedReportes = new ArrayList<>();
         for (File file : files) {
             if (file == null) {
                 continue;
@@ -764,9 +903,12 @@ public class Principal extends JFrame {
                 txtBase.setText(file.getAbsolutePath());
                 assigned = true;
             } else if (name.endsWith(".txt")) {
-                txtReporte.setText(file.getAbsolutePath());
+                droppedReportes.add(file);
                 assigned = true;
             }
+        }
+        if (!droppedReportes.isEmpty()) {
+            mergeSelectedReportes(droppedReportes);
         }
         if (!assigned) {
             showError("Solo se aceptan archivos .csv/.xlsx o .txt.");
@@ -834,7 +976,7 @@ public class Principal extends JFrame {
         panelFields.add(btnBuscarBase, gbcBtnBase);
 
         JLabel lblReporte = new JLabel();
-        lblReporte.setText("Reporte Amazon (.txt)");
+        lblReporte.setText("Reporte(s) Amazon (.txt)");
         GridBagConstraints gbcLblReporte = new GridBagConstraints();
         gbcLblReporte.gridx = 0;
         gbcLblReporte.gridy = 1;
@@ -915,7 +1057,7 @@ public class Principal extends JFrame {
         rootPanel.add(panelStatus, BorderLayout.SOUTH);
 
         lblStatus = new JLabel();
-        lblStatus.setText("Listo. Arrastra archivos .csv/.xlsx y .txt o usa Buscar.");
+        lblStatus.setText("Listo. Arrastra base .csv/.xlsx y uno o varios reportes .txt.");
         panelStatus.add(lblStatus, BorderLayout.CENTER);
 
         btnHelp = new JButton();

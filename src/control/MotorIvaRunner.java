@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
@@ -31,6 +32,7 @@ public class MotorIvaRunner {
         public File reporte;
         public File baseGeneradaCsv;
         public File reporteAmazonCopiado;
+        public List<File> reportesAmazonCopiados = new ArrayList<>();
         public File carpetaSalida;
         public String stdout;
     }
@@ -38,10 +40,24 @@ public class MotorIvaRunner {
     public Resultado ejecutar(File baseFile, File reporteTxt, File outputRootDirectory, File previewCsv,
             File resumenFile, String sheetName)
             throws IOException {
+        return ejecutar(baseFile,
+                reporteTxt == null ? new ArrayList<>() : Arrays.asList(reporteTxt),
+                outputRootDirectory,
+                previewCsv,
+                resumenFile,
+                sheetName);
+    }
+
+    public Resultado ejecutar(File baseFile, List<File> reportesTxt, File outputRootDirectory, File previewCsv,
+            File resumenFile, String sheetName)
+            throws IOException {
         IvaEngine engine = new IvaEngine();
         IvaEngine.ProcessRequest request = new IvaEngine.ProcessRequest();
         request.baseFile = baseFile;
-        request.reporteTxt = reporteTxt;
+        request.reporteTxts = reportesTxt;
+        if (reportesTxt != null && !reportesTxt.isEmpty()) {
+            request.reporteTxt = reportesTxt.get(0);
+        }
         request.previewCsv = previewCsv;
         request.resumenFile = resumenFile;
         request.reporteOutFile = null;
@@ -84,6 +100,10 @@ public class MotorIvaRunner {
         resultado.baseGeneradaCsv = toFileOrNull(props.getProperty("output_csv"));
         resultado.reporte = toFileOrNull(props.getProperty("output_log"));
         resultado.reporteAmazonCopiado = toFileOrNull(props.getProperty("output_reporte_amazon"));
+        resultado.reportesAmazonCopiados = splitFiles(props.getProperty("output_reportes_amazon"));
+        if ((resultado.reporteAmazonCopiado == null) && !resultado.reportesAmazonCopiados.isEmpty()) {
+            resultado.reporteAmazonCopiado = resultado.reportesAmazonCopiados.get(0);
+        }
         resultado.carpetaSalida = toFileOrNull(props.getProperty("output_month_folder"));
         resultado.mensaje = "OK";
         return resultado;
@@ -108,5 +128,20 @@ public class MotorIvaRunner {
             return null;
         }
         return new File(value.trim());
+    }
+
+    private List<File> splitFiles(String value) {
+        List<File> files = new ArrayList<>();
+        if (value == null || value.trim().isEmpty()) {
+            return files;
+        }
+        String[] parts = value.split("\\|");
+        for (String part : parts) {
+            String path = part == null ? "" : part.trim();
+            if (!path.isEmpty()) {
+                files.add(new File(path));
+            }
+        }
+        return files;
     }
 }

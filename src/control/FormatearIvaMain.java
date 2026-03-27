@@ -2,7 +2,9 @@ package control;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -15,6 +17,7 @@ public class FormatearIvaMain {
 
     public static int run(String[] args) throws IOException {
         Map<String, String> options = parseOptions(args);
+        List<String> reportes = parseRepeatedOption(args, "--reporte");
 
         String base = options.get("--base");
         if (base == null || base.trim().isEmpty()) {
@@ -32,9 +35,8 @@ public class FormatearIvaMain {
             return 0;
         }
 
-        String reporte = options.get("--reporte");
         String salida = options.get("--salida");
-        if (reporte == null || reporte.trim().isEmpty()) {
+        if (reportes.isEmpty()) {
             throw new IOException("Falta --reporte");
         }
         if (salida == null || salida.trim().isEmpty()) {
@@ -48,7 +50,8 @@ public class FormatearIvaMain {
 
         IvaEngine.ProcessRequest request = new IvaEngine.ProcessRequest();
         request.baseFile = baseFile;
-        request.reporteTxt = new File(reporte).getAbsoluteFile();
+        request.reporteTxts = dedupeReportFiles(reportes);
+        request.reporteTxt = request.reporteTxts.isEmpty() ? null : request.reporteTxts.get(0);
         request.previewCsv = new File(salida).getAbsoluteFile();
         request.resumenFile = new File(resumen).getAbsoluteFile();
         String outputRoot = options.get("--output-root");
@@ -81,6 +84,32 @@ public class FormatearIvaMain {
             throw new IOException("Argumento no soportado: " + arg);
         }
         return options;
+    }
+
+    private static List<String> parseRepeatedOption(String[] args, String option) throws IOException {
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < args.length; i++) {
+            if (!option.equals(args[i])) {
+                continue;
+            }
+            if (i + 1 >= args.length || args[i + 1].startsWith("--")) {
+                throw new IOException("Falta valor para " + option);
+            }
+            values.add(args[++i]);
+        }
+        return values;
+    }
+
+    private static List<File> dedupeReportFiles(List<String> reportPaths) {
+        LinkedHashMap<String, File> unique = new LinkedHashMap<>();
+        for (String path : reportPaths) {
+            if (path == null || path.trim().isEmpty()) {
+                continue;
+            }
+            File absolute = new File(path.trim()).getAbsoluteFile();
+            unique.putIfAbsent(absolute.getAbsolutePath(), absolute);
+        }
+        return new ArrayList<>(unique.values());
     }
 }
 
