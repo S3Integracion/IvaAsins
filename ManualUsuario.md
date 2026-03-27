@@ -1,17 +1,17 @@
 ﻿# Manual de usuario - Iva Asins
 
 ## Que hace el programa
-Procesa tu base de IVA usando un reporte Amazon sin sobrescribir el archivo original. El programa genera una nueva base CSV versionada, un log del proceso y una copia del reporte Amazon.
+Procesa tu base de IVA usando uno o varios reportes Amazon sin sobrescribir el archivo original. El programa genera una nueva base CSV versionada, un log del proceso y copias de los reportes usados.
 
 ## Antes de empezar
-- Verifica que la base tenga las columnas ASIN e IVA.
-- Ten a mano el reporte Amazon en formato .txt.
+- Verifica que la base tenga las columnas ASIN e IVA (ya no se requiere SKU vacia).
+- Ten a mano uno o varios reportes Amazon en formato .txt.
 - Opcional: define una carpeta raiz donde quieras guardar los resultados versionados.
 
 ## Pasos para procesar
 1. Abre el programa.
 2. Selecciona la base IVA (.csv o .xlsx) con el boton "Buscar" o arrastrando el archivo.
-3. Selecciona el reporte Amazon (.txt) con el boton "Buscar" o arrastrando el archivo.
+3. Selecciona uno o varios reportes Amazon (.txt) con el boton "Buscar" o arrastrando archivos.
 4. Si la base es XLSX y se muestra una lista de hojas, elige la hoja correcta.
 5. Opcional: selecciona "Carpeta raiz de guardado".
 6. Presiona "Procesar" y espera a que termine.
@@ -19,10 +19,16 @@ Procesa tu base de IVA usando un reporte Amazon sin sobrescribir el archivo orig
 
 ## Donde quedan los resultados
 - Se crea una carpeta `Bases de datos de IVAS` en la ruta raiz seleccionada (o en la carpeta de la base si no defines una).
-- Dentro se generan subcarpetas por anio y mes (segun fecha del sistema).
+- Dentro se generan subcarpetas por anio, mes y dia (segun fecha local del sistema).
 - Se crea un CSV nuevo: `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`.
+- El CSV generado siempre queda con 3 columnas: `FECHA,ASIN,IVA`.
+- `FECHA` se guarda con formato `MM/dd/yyyy` usando la fecha local del sistema.
+- `FECHA` solo se actualiza cuando el ASIN tuvo alta nueva o cambio de IVA.
 - Se crea un log del proceso con extension `.log`.
-- Se guarda tambien una copia del reporte Amazon con nombre: `Reporte de Amazon HHmm MM-dd-yyyy.txt`.
+- Se guardan copias de todos los reportes usados.
+- Nombres de copias:
+  - Primer archivo: `Reporte de Amazon HHmm MM-dd-yyyy.txt`
+  - Desde el segundo: `Reporte de Amazon HHmm MM-dd-yyyy (2).txt`, `(3)`, etc.
 - La tabla muestra una vista previa de los registros agregados. Si no hubo nuevos, puede mostrar toda la base.
 
 ## Buenas practicas
@@ -32,6 +38,9 @@ Procesa tu base de IVA usando un reporte Amazon sin sobrescribir el archivo orig
 ## Preguntas frecuentes
 **El programa elimina productos cancelados?**
 No. Los pedidos cancelados solo se ignoran en el calculo, pero no se eliminan de la base.
+
+**Si el mismo ASIN aparece en varios reportes, cual gana?**
+Se conserva el registro mas reciente por fecha (`last-updated-date`; si falta, `purchase-date`). Si hay empate de fecha, se prioriza IVA `SI`.
 
 **Puedo usar una base con mas columnas?**
 Si, pero el programa solo completa ASIN e IVA. Las otras columnas pueden quedar vacias.
