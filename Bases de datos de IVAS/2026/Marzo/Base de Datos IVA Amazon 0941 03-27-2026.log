@@ -1,0 +1,75 @@
+REPORTE IVA PROCESS
+Fecha/Hora: 2026-03-27 09:41:20
+
+RESUMEN GENERAL
+Base: C:\Users\ariel\GitHub\IvaAsins\resources\preview_test_coma.csv
+Directorio base origen: C:\Users\ariel\GitHub\IvaAsins\resources
+Tipo base: CSV
+Reportes inventario procesados: 1
+Reporte inventario [1]: C:\Users\ariel\GitHub\IvaAsins\resources\Bases de datos de IVAS\2026\Marzo\Reporte de Amazon 1935 03-25-2026.txt
+Directorio reporte origen [1]: C:\Users\ariel\GitHub\IvaAsins\resources\Bases de datos de IVAS\2026\Marzo
+CSV generado: C:\Users\ariel\GitHub\IvaAsins\Bases de datos de IVAS\2026\Marzo\Base de Datos IVA Amazon 0941 03-27-2026.csv
+Fecha aplicada a altas/modificaciones IVA: 03/27/2026
+Reporte Amazon copiado [1]: C:\Users\ariel\GitHub\IvaAsins\Bases de datos de IVAS\2026\Marzo\Reporte de Amazon 0941 03-27-2026.txt
+Carpeta de salida del proceso: C:\Users\ariel\GitHub\IvaAsins\Bases de datos de IVAS\2026\Marzo
+Total filas en reporte: 1491
+Filas canceladas: 90 (ASIN unicos: 36)
+Filas sin ASIN: 0
+Filas duplicadas en reporte: 312
+ASIN unicos procesados: 1089
+Agregados nuevos: 0
+Modificados (IVA cambiado): 0
+Sin cambios (IVA igual): 1089
+Duplicados en base consolidados: 0
+Eliminados de base (filas): 0
+Total base antes: 52544
+Total base despues: 52544
+Vista previa inicia en fila (sin encabezado): 1
+
+PRODUCTOS AGREGADOS (ASIN,IVA)
+ASIN,IVA
+
+PRODUCTOS MODIFICADOS (ASIN,IVA_ANTERIOR,IVA_NUEVO)
+ASIN,IVA_ANTERIOR,IVA_NUEVO
+
+PRODUCTOS NO PROCESADOS (ASIN,MOTIVO)
+ASIN,MOTIVO
+B000TBWZJ4,CANCELADO
+B0015GQCH8,CANCELADO
+B0029JXPHA,CANCELADO
+B00302N1DS,CANCELADO
+B004NTCE1M,CANCELADO
+B0060ABVFW,CANCELADO
+B00649MYJG,CANCELADO
+B007TSJLCE,CANCELADO
+B008F2JI8K,CANCELADO
+B008VYU3WW,CANCELADO
+B00EZWSENY,CANCELADO
+B00PF02Y36,CANCELADO
+B00TUDFEW2,CANCELADO
+B012HIRASC,CANCELADO
+B014BCK05C,CANCELADO
+B0189UYGWA,CANCELADO
+B01GQ5GQ5U,CANCELADO
+B01IAEMYKG,CANCELADO
+B01N66IMQG,CANCELADO
+B06XPG4DS3,CANCELADO
+B0731M8NJJ,CANCELADO
+B07BLKHH2P,CANCELADO
+B07Y6RWHP1,CANCELADO
+B0838TZKF1,CANCELADO
+B084HGST7F,CANCELADO
+B0851PKTMH,CANCELADO
+B0955QKRZ6,CANCELADO
+B095Z1QL13,CANCELADO
+B09J1PWSDX,CANCELADO
+B09KJ9D1DM,CANCELADO
+B09LH36816,CANCELADO
+B09LHZHTNH,CANCELADO
+B09PZFSKJJ,CANCELADO
+B09Z2JFJWK,CANCELADO
+B0B16NQRS9,CANCELADO
+B0B51VQ71K,CANCELADO
+
+PRODUCTOS ELIMINADOS DE LA BASE (ASIN,ELIMINADOS)
+ASIN,ELIMINADOS

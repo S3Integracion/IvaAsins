@@ -864,9 +864,16 @@ public class IvaEngine {
     private OutputLayout resolveOutputLayout(Path basePath, File outputRootDirectory) throws IOException {
         LocalDateTime now = LocalDateTime.now();
         String timestamp = now.format(DateTimeFormatter.ofPattern("HHmm MM-dd-yyyy"));
-        Path targetRootBase = outputRootDirectory == null
-                ? basePath.getParent()
-                : outputRootDirectory.toPath();
+        Path detectedOriginRoot = detectExistingOriginRoot(basePath);
+        Path targetRootBase;
+        if (detectedOriginRoot != null) {
+            // Si la base ya esta dentro de una jerarquia valida, se reutiliza ese origen.
+            targetRootBase = detectedOriginRoot;
+        } else {
+            targetRootBase = outputRootDirectory == null
+                    ? basePath.getParent()
+                    : outputRootDirectory.toPath();
+        }
         if (targetRootBase == null) {
             targetRootBase = Path.of(System.getProperty("user.dir"));
         }
@@ -883,6 +890,71 @@ public class IvaEngine {
                 ".csv");
         layout.generatedLog = replaceExtension(layout.generatedCsv, ".log");
         return layout;
+    }
+
+    private Path detectExistingOriginRoot(Path basePath) {
+        if (basePath == null) {
+            return null;
+        }
+        Path current = basePath.getParent();
+        Path selectedRoot = null;
+
+        while (current != null) {
+            Path yearFolder = current.getParent();
+            Path basesFolder = yearFolder == null ? null : yearFolder.getParent();
+            Path rootFolder = basesFolder == null ? null : basesFolder.getParent();
+
+            if (yearFolder != null && basesFolder != null && rootFolder != null
+                    && isMonthFolderName(current.getFileName())
+                    && isYearFolderName(yearFolder.getFileName())
+                    && isBasesFolderName(basesFolder.getFileName())) {
+                // Se conserva la coincidencia mas externa (mas cercana al origen de la ruta).
+                selectedRoot = rootFolder;
+            }
+
+            current = current.getParent();
+        }
+
+        return selectedRoot;
+    }
+
+    private boolean isBasesFolderName(Path folderName) {
+        return folderName != null && "bases de datos de ivas".equalsIgnoreCase(folderName.toString());
+    }
+
+    private boolean isYearFolderName(Path folderName) {
+        if (folderName == null) {
+            return false;
+        }
+        String value = folderName.toString().trim();
+        if (value.length() != 4) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isMonthFolderName(Path folderName) {
+        if (folderName == null) {
+            return false;
+        }
+        String month = folderName.toString().trim().toLowerCase(Locale.ROOT);
+        return "enero".equals(month)
+                || "febrero".equals(month)
+                || "marzo".equals(month)
+                || "abril".equals(month)
+                || "mayo".equals(month)
+                || "junio".equals(month)
+                || "julio".equals(month)
+                || "agosto".equals(month)
+                || "septiembre".equals(month)
+                || "octubre".equals(month)
+                || "noviembre".equals(month)
+                || "diciembre".equals(month);
     }
 
     private List<Path> copyReportFiles(List<File> reportFiles, Path monthFolder, String timestamp) throws IOException {
