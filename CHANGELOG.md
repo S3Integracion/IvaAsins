@@ -2,6 +2,12 @@
 
 ## 2026-03-25
 
+### Actualizacion: normalizacion de columnas y fecha por cambio de IVA
+- La salida CSV se normaliza a 3 columnas fijas: `FECHA,ASIN,IVA`.
+- Se elimina la dependencia de columna `SKU` vacia.
+- `FECHA` usa fecha local del sistema con formato `MM/dd/yyyy`.
+- `FECHA` solo se actualiza en ASIN de reporte cuando hubo alta nueva o cambio de estado de IVA.
+
 ### Actualizacion mayor: procesamiento de multiples reportes Amazon
 - El motor acepta uno o varios `--reporte` y consolida por ASIN en una sola corrida.
 - Si un ASIN aparece en multiples reportes, gana la fila con fecha mas reciente:

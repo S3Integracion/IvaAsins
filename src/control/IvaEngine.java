@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Month;
 import java.time.OffsetDateTime;
@@ -61,6 +62,9 @@ import org.xml.sax.SAXException;
 public class IvaEngine {
 
     public static final String BASE_SHEET_NAME = "Base de Datos IVA Amazon";
+    private static final String OUTPUT_FECHA = "FECHA";
+    private static final String OUTPUT_ASIN = "ASIN";
+    private static final String OUTPUT_IVA = "IVA";
 
     public static class ProcessRequest {
         public File baseFile;
@@ -154,6 +158,7 @@ public class IvaEngine {
     public ProcessResult process(ProcessRequest request) throws IOException {
         validateRequest(request);
         List<File> reportFiles = resolveReportFiles(request);
+        String processDate = LocalDate.now().format(DateTimeFormatter.ofPattern("MM/dd/yyyy"));
 
         String basePath = request.baseFile.getAbsolutePath();
         String ext = extensionOf(basePath);
@@ -164,7 +169,7 @@ public class IvaEngine {
                 : loadBaseCsv(request.baseFile);
 
         ReportStats reportStats = loadReports(reportFiles);
-        ApplyStats applyStats = applyReportToBase(baseData, reportStats.reportMap);
+        ApplyStats applyStats = applyReportToBase(baseData, reportStats.reportMap, processDate);
 
         OutputLayout outputLayout = resolveOutputLayout(request.baseFile.toPath(), request.outputRootDirectory);
         writeBaseCsv(outputLayout.generatedCsv, baseData);
@@ -200,7 +205,8 @@ public class IvaEngine {
                 applyStats.modified,
                 cancelledOnly,
                 baseData.baseDuplicates,
-                applyStats.firstNewIndex);
+                applyStats.firstNewIndex,
+                processDate);
 
         ProcessResult result = new ProcessResult();
         result.ok = true;
@@ -276,13 +282,24 @@ public class IvaEngine {
 
         data.delimiter = detectDelimiter(headerLine);
         String headerNoEol = stripEol(headerLine);
-        data.trailingDelimiter = headerNoEol.endsWith(data.delimiter);
+        data.trailingDelimiter = false;
         data.headerLine = headerNoEol;
-        data.headerFields = splitPreserveAll(headerNoEol, data.delimiter);
+
+        List<String> sourceHeaderFields = splitPreserveAll(headerNoEol, data.delimiter);
+        Map<String, Integer> sourceHeaderMap = buildHeaderMap(sourceHeaderFields);
+        ensureHeaderColumns(sourceHeaderMap, "No se encontro la columna ASIN en el CSV base.",
+                "No se encontro la columna IVA en el CSV base.");
+
+        data.headerFields = buildOutputHeader();
         data.headerMap = buildHeaderMap(data.headerFields);
 
-        ensureHeaderColumns(data.headerMap, "No se encontro la columna ASIN en el CSV base.",
-                "No se encontro la columna IVA en el CSV base.");
+        int outputFechaIdx = data.headerMap.get("fecha");
+        int outputAsinIdx = data.headerMap.get("asin");
+        int outputIvaIdx = data.headerMap.get("iva");
+
+        Integer sourceFechaIdx = sourceHeaderMap.get("fecha");
+        int sourceAsinIdx = sourceHeaderMap.get("asin");
+        int sourceIvaIdx = sourceHeaderMap.get("iva");
 
         data.baseMap = new LinkedHashMap<>();
         data.baseDuplicates = new ArrayList<>();
@@ -301,12 +318,15 @@ public class IvaEngine {
                 }
                 data.baseOriginalRows++;
                 List<String> row = splitPreserveAll(line, data.delimiter);
-                padRow(row, data.headerFields.size());
-                String asin = row.get(data.headerMap.get("asin")).trim();
-                String iva = row.get(data.headerMap.get("iva")).trim();
+                padRow(row, sourceHeaderFields.size());
+
+                String asin = row.get(sourceAsinIdx).trim();
+                String iva = row.get(sourceIvaIdx).trim();
                 if (asin.isEmpty()) {
                     continue;
                 }
+                String fecha = sourceFechaIdx == null ? "" : Objects.toString(row.get(sourceFechaIdx), "").trim();
+
                 String asinNorm = asin.toUpperCase(Locale.ROOT);
                 String ivaNorm = normalizeIva(iva);
                 BaseRecord existing = data.baseMap.get(asinNorm);
@@ -314,13 +334,19 @@ public class IvaEngine {
                     data.baseDuplicates.add(asinNorm);
                     if (!"SI".equals(existing.iva) && "SI".equals(ivaNorm)) {
                         existing.iva = "SI";
-                        existing.rowValues.set(data.headerMap.get("iva"), "SI");
+                        existing.rowValues.set(outputIvaIdx, "SI");
+                        if (!fecha.isEmpty()) {
+                            existing.rowValues.set(outputFechaIdx, fecha);
+                        }
                     }
                     continue;
                 }
-                row.set(data.headerMap.get("asin"), asinNorm);
-                row.set(data.headerMap.get("iva"), ivaNorm);
-                data.baseMap.put(asinNorm, new BaseRecord(asinNorm, ivaNorm, row));
+
+                List<String> normalizedRow = emptyRow(data.headerFields.size());
+                normalizedRow.set(outputFechaIdx, fecha);
+                normalizedRow.set(outputAsinIdx, asinNorm);
+                normalizedRow.set(outputIvaIdx, ivaNorm);
+                data.baseMap.put(asinNorm, new BaseRecord(asinNorm, ivaNorm, normalizedRow));
             }
         }
 
@@ -341,24 +367,31 @@ public class IvaEngine {
         List<String> sharedStrings = zip.readSharedStrings();
 
         Map<Integer, String> headerMapByIndex = readSheetRowValues(sheetDoc, 1, sharedStrings);
-        int maxColumn = maxColumnIndex(headerMapByIndex.keySet()) + 1;
-        if (maxColumn < 1) {
-            maxColumn = 2;
+        int sourceMaxColumn = maxColumnIndex(headerMapByIndex.keySet()) + 1;
+        if (sourceMaxColumn < 1) {
+            sourceMaxColumn = 2;
         }
-        List<String> headerFields = new ArrayList<>();
-        for (int i = 0; i < maxColumn; i++) {
-            headerFields.add(Objects.toString(headerMapByIndex.get(i), ""));
-        }
-        data.headerFields = headerFields;
-        data.headerMap = buildHeaderMap(headerFields);
 
-        ensureHeaderColumns(data.headerMap, "No se encontro la columna ASIN en la hoja base.",
+        List<String> sourceHeaderFields = new ArrayList<>();
+        for (int i = 0; i < sourceMaxColumn; i++) {
+            sourceHeaderFields.add(Objects.toString(headerMapByIndex.get(i), ""));
+        }
+        Map<String, Integer> sourceHeaderMap = buildHeaderMap(sourceHeaderFields);
+        ensureHeaderColumns(sourceHeaderMap, "No se encontro la columna ASIN en la hoja base.",
                 "No se encontro la columna IVA en la hoja base.");
 
-        data.baseOriginalRows = 0;
-        int asinCol0 = data.headerMap.get("asin");
-        int ivaCol0 = data.headerMap.get("iva");
+        data.headerFields = buildOutputHeader();
+        data.headerMap = buildHeaderMap(data.headerFields);
 
+        int outputFechaIdx = data.headerMap.get("fecha");
+        int outputAsinIdx = data.headerMap.get("asin");
+        int outputIvaIdx = data.headerMap.get("iva");
+
+        Integer sourceFechaIdx = sourceHeaderMap.get("fecha");
+        int sourceAsinIdx = sourceHeaderMap.get("asin");
+        int sourceIvaIdx = sourceHeaderMap.get("iva");
+
+        data.baseOriginalRows = 0;
         Element sheetData = findFirstElementByLocalName(sheetDoc.getDocumentElement(), "sheetData");
         if (sheetData != null) {
             NodeList rows = sheetData.getChildNodes();
@@ -375,12 +408,17 @@ public class IvaEngine {
                 if (rowNumber >= 0 && rowNumber < 2) {
                     continue;
                 }
+
                 Map<Integer, String> values = readRowValues(row, sharedStrings);
-                String asin = Objects.toString(values.get(asinCol0), "").trim();
-                String iva = Objects.toString(values.get(ivaCol0), "").trim();
+                String asin = Objects.toString(values.get(sourceAsinIdx), "").trim();
+                String iva = Objects.toString(values.get(sourceIvaIdx), "").trim();
                 if (asin.isEmpty()) {
                     continue;
                 }
+                String fecha = sourceFechaIdx == null
+                        ? ""
+                        : Objects.toString(values.get(sourceFechaIdx), "").trim();
+
                 data.baseOriginalRows++;
                 String asinNorm = asin.toUpperCase(Locale.ROOT);
                 String ivaNorm = normalizeIva(iva);
@@ -389,17 +427,16 @@ public class IvaEngine {
                     data.baseDuplicates.add(asinNorm);
                     if (!"SI".equals(existing.iva) && "SI".equals(ivaNorm)) {
                         existing.iva = "SI";
-                        existing.rowValues.set(ivaCol0, "SI");
+                        existing.rowValues.set(outputIvaIdx, "SI");
+                        if (!fecha.isEmpty()) {
+                            existing.rowValues.set(outputFechaIdx, fecha);
+                        }
                     }
                 } else {
                     List<String> rowData = emptyRow(data.headerFields.size());
-                    for (Map.Entry<Integer, String> entry : values.entrySet()) {
-                        if (entry.getKey() >= 0 && entry.getKey() < rowData.size()) {
-                            rowData.set(entry.getKey(), Objects.toString(entry.getValue(), ""));
-                        }
-                    }
-                    rowData.set(asinCol0, asinNorm);
-                    rowData.set(ivaCol0, ivaNorm);
+                    rowData.set(outputFechaIdx, fecha);
+                    rowData.set(outputAsinIdx, asinNorm);
+                    rowData.set(outputIvaIdx, ivaNorm);
                     data.baseMap.put(asinNorm, new BaseRecord(asinNorm, ivaNorm, rowData));
                 }
             }
@@ -409,7 +446,7 @@ public class IvaEngine {
         xlsx.sheetName = sheetRef.name;
         xlsx.sheetEntryPath = sheetRef.path;
         xlsx.zip = zip;
-        xlsx.maxColumn = Math.max(maxColumn, Math.max(asinCol0 + 1, ivaCol0 + 1));
+        xlsx.maxColumn = 3;
         data.xlsx = xlsx;
         return data;
     }
@@ -561,10 +598,11 @@ public class IvaEngine {
         return false;
     }
 
-    private ApplyStats applyReportToBase(BaseData baseData, LinkedHashMap<String, String> reportMap) {
+    private ApplyStats applyReportToBase(BaseData baseData, LinkedHashMap<String, String> reportMap, String processDate) {
         ApplyStats apply = new ApplyStats();
         apply.firstNewIndex = -1;
         LinkedHashMap<String, BaseRecord> baseMap = baseData.baseMap;
+        int fechaIdx = baseData.headerMap.get("fecha");
         int asinIdx = baseData.headerMap.get("asin");
         int ivaIdx = baseData.headerMap.get("iva");
 
@@ -578,6 +616,7 @@ public class IvaEngine {
                     apply.modified.add(new String[] { asin, existing.iva, iva });
                     existing.iva = iva;
                     existing.rowValues.set(ivaIdx, iva);
+                    existing.rowValues.set(fechaIdx, processDate);
                 } else {
                     apply.unchanged++;
                 }
@@ -585,8 +624,8 @@ public class IvaEngine {
                 if (apply.firstNewIndex < 0) {
                     apply.firstNewIndex = baseMap.size();
                 }
-                // Se crea una fila con la misma estructura de encabezados para no perder columnas.
                 List<String> newRow = emptyRow(baseData.headerFields.size());
+                newRow.set(fechaIdx, processDate);
                 newRow.set(asinIdx, asin);
                 newRow.set(ivaIdx, iva);
                 baseMap.put(asin, new BaseRecord(asin, iva, newRow));
@@ -635,6 +674,7 @@ public class IvaEngine {
             }
         }
 
+        int fechaCol1 = baseData.headerMap.get("fecha") + 1;
         int asinCol1 = baseData.headerMap.get("asin") + 1;
         int ivaCol1 = baseData.headerMap.get("iva") + 1;
         int rowNumber = 2;
@@ -642,6 +682,8 @@ public class IvaEngine {
             Element row = sheetDoc.createElementNS(worksheet.getNamespaceURI(), "row");
             row.setAttribute("r", Integer.toString(rowNumber));
 
+            row.appendChild(createInlineStringCell(sheetDoc, worksheet.getNamespaceURI(), fechaCol1, rowNumber,
+                    Objects.toString(record.rowValues.get(baseData.headerMap.get("fecha")), "")));
             row.appendChild(createInlineStringCell(sheetDoc, worksheet.getNamespaceURI(), asinCol1, rowNumber, record.asin));
             row.appendChild(createInlineStringCell(sheetDoc, worksheet.getNamespaceURI(), ivaCol1, rowNumber, record.iva));
 
@@ -649,7 +691,7 @@ public class IvaEngine {
             rowNumber++;
         }
 
-        int lastColumn = Math.max(xlsx.maxColumn, Math.max(asinCol1, ivaCol1));
+        int lastColumn = Math.max(xlsx.maxColumn, Math.max(fechaCol1, Math.max(asinCol1, ivaCol1)));
         int lastRow = Math.max(1, baseData.baseMap.size() + 1);
         updateDimension(sheetDoc, worksheet.getNamespaceURI(), lastColumn, lastRow);
 
@@ -719,7 +761,8 @@ public class IvaEngine {
 
     private void writeReport(Path reportPath, File baseFile, String baseType, String sheetName, List<File> reportFiles,
             Path generatedCsv, List<Path> copiedReportPaths, Map<String, String> resumen, List<String[]> added,
-            List<String[]> modified, Set<String> cancelledOnly, List<String> baseDuplicates, int previewStartIndex)
+            List<String[]> modified, Set<String> cancelledOnly, List<String> baseDuplicates, int previewStartIndex,
+            String processDate)
             throws IOException {
         ensureParent(reportPath);
 
@@ -746,6 +789,7 @@ public class IvaEngine {
             lines.add("Directorio reporte origen [" + (i + 1) + "]: " + Objects.toString(report.getParent(), ""));
         }
         lines.add("CSV generado: " + generatedCsv.toString());
+        lines.add("Fecha aplicada a altas/modificaciones IVA: " + processDate);
         if (copiedReportPaths == null || copiedReportPaths.isEmpty()) {
             lines.add("Reporte Amazon copiado: ");
         } else {
@@ -972,6 +1016,10 @@ public class IvaEngine {
 
     private String normalizeHeader(String value) {
         return Objects.toString(value, "").trim().toLowerCase(Locale.ROOT).replace(' ', '-').replace('_', '-');
+    }
+
+    private List<String> buildOutputHeader() {
+        return Arrays.asList(OUTPUT_FECHA, OUTPUT_ASIN, OUTPUT_IVA);
     }
 
     private boolean isCancelled(String value) {
@@ -1498,5 +1546,4 @@ public class IvaEngine {
         }
     }
 }
-
 

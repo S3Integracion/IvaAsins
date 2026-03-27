@@ -21,7 +21,8 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 ## Entradas
 ### Base IVA (CSV o XLSX)
 - Debe tener columnas `ASIN` e `IVA` (no importa mayusculas o minusculas).
-- Se permiten mas columnas, pero el motor solo rellena ASIN e IVA.
+- Ya no se requiere columna `SKU` vacia.
+- La salida final siempre se normaliza a 3 columnas: `FECHA,ASIN,IVA`.
 - En XLSX se usa la hoja `IVA's Base de Datos` por defecto.
 - Los valores de IVA se normalizan a `SI` o `NO` cuando coinciden con variantes comunes.
 
@@ -41,6 +42,10 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
   - Fecha de referencia: `last-updated-date` (fallback a `purchase-date`).
   - Si hay empate de fecha, se prioriza IVA `SI`.
 - Duplicados en base:
+    - Fecha por ASIN en salida:
+      - `FECHA` usa la fecha local del sistema con formato `MM/dd/yyyy`.
+      - Solo se actualiza `FECHA` cuando el ASIN del reporte provoca alta nueva o cambio de IVA.
+      - Si el ASIN no cambia IVA, su `FECHA` se conserva.
   - Se consolida un solo registro por ASIN.
   - Si algun duplicado tiene IVA `SI`, el registro final queda en `SI`.
 - Previsualizacion:
@@ -53,6 +58,8 @@ Incluye interfaz grafica y motor de procesamiento 100% Java (sin dependencias ex
 ## Salidas
 - Nueva base CSV (no se sobreescribe la base original) con nombre:
   - `Base de Datos IVA Amazon HHmm MM-dd-yyyy.csv`
+- Estructura del CSV generado:
+  - `FECHA,ASIN,IVA`
 - Log del proceso con extension `.log` en la misma carpeta de salida versionada.
 - Copia de todos los reportes Amazon `.txt` en la misma carpeta de salida versionada.
 - Previsualizacion CSV (ruta definida por la interfaz o CLI).
